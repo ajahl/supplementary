@@ -358,6 +358,8 @@ namespace supplementary
 
 			if (nodes[i]->getType() == ConfigNode::Node)
 			{
+//				cout << "IN VALUE: " << nodes[i]->getChildren()->back()->getName() << endl;
+
 				result->push_back(nodes[i]->getName());
 			}
 		}
@@ -512,6 +514,9 @@ namespace supplementary
 				string::size_type p = 0;
 				string::size_type q;
 				string charString = temp;
+//				cout << "PFAD IN GETPARAMS: " << temp << endl;
+//				cout << "FIND: " << charString.find(seperator, p) << endl;
+//				cout << "VA: " << va_arg(ap, const char *) << endl;
 				while ((q = charString.find(seperator, p)) != string::npos)
 				{
 //					cout << "SC-Conf: Adding-InLoop: '" << string(temp, p, q-p) << "'" << endl;
@@ -520,8 +525,34 @@ namespace supplementary
 				}
 //				cout << "SC-Conf: Adding-AfterLoop: '" << string(temp, p, charString.length()-p) << "'" << endl;
 				params->emplace_back(temp, p, charString.length()-p);
+//				cout << "TEMP: " << temp << endl;
 			} while ((temp = va_arg(ap, const char *)) != NULL);
 		}
 		return params;
+	}
+
+	shared_ptr<vector<ConfigNode*> > Configuration::getNodes(const char* path,...)
+	{
+		if (path != NULL)
+		{
+			shared_ptr<vector<ConfigNode*> > result(new vector<ConfigNode*>());
+			const char *temp = path;
+			vector<ConfigNode *> nodes;
+			va_list ap;
+			va_start(ap, path);
+			shared_ptr<vector<string> > params = getParams('.', path, ap);
+			va_end(ap);
+			collect(this->configRoot.get(), params.get(), 0, &nodes);
+
+			for (size_t i = 0; i < nodes.size(); i++)
+			{
+				result->push_back(nodes[i]);
+			}
+			return result;
+		}
+		else
+		{
+			cout << "Not valid path in getNodes" << endl;
+		}
 	}
 }

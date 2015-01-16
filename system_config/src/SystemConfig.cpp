@@ -10,6 +10,7 @@ namespace supplementary
 	string SystemConfig::hostname;
 	mutex SystemConfig::configsMapMutex;
 	map<string, shared_ptr<Configuration> > SystemConfig::configs;
+	map<string, shared_ptr<Configuration> > SystemConfig::newConfigs;
 
 	/**
 	 * The method for getting the singleton instance.
@@ -28,6 +29,9 @@ namespace supplementary
 	{
 		// set the domain folder (1. by env-variable 2. by cwd)
 		char *x = ::getenv(DOMAIN_FOLDER.c_str());
+		char cwd[4096];
+		::getcwd(cwd, 4096);
+		cout << "CWD: " << cwd << endl;
 		if (x == NULL)
 		{
 			char cwd[4096];
@@ -36,6 +40,7 @@ namespace supplementary
 				cerr << "SystemConfig: Error while calling getcwd!" << endl;
 			}
 			rootPath = cwd;
+			cout << "cwd: " << cwd << endl;
 		}
 		else
 		{

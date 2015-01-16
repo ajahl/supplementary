@@ -66,6 +66,7 @@ namespace supplementary
 		shared_ptr<vector<string> > tryGetSections(string d, const char *path, ...);
 		shared_ptr<vector<string> > getNames(const char *path, ...);
 		shared_ptr<vector<string> > tryGetNames(string d, const char *path, ...);
+		shared_ptr<vector<ConfigNode*> > getNodes(const char *path, ...);
 
 		template<typename T>
 		T get(const char *path, ...)
