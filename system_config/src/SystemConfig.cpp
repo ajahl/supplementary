@@ -135,7 +135,6 @@ namespace supplementary
 			}
 		}
 
-
 		// config-file not found, print error message
 		cerr << "Configuration file " << file << " not found in either location:" << endl;
 		for (size_t i = 0; i < files.size(); i++)
@@ -145,20 +144,25 @@ namespace supplementary
 		return nullptr;
 	}
 
-//	int SystemConfig::GetOwnRobotID()
-//	{
-//		if (ownRobotID != 0)
-//			return ownRobotID;
-//
-//		Configuration *tmp = (*SystemConfig::getInstance())["Globals"];
-//		ownRobotID = tmp->get<int>("Globals", "Team", SystemConfig::getHostname().c_str(), "ID", NULL);
-//		/* Philipp Sperber:
-//		 * Never delete a Configuration Pointer!!!
-//		 * Messes up on next call
-//		 */
-//		delete tmp;
-//		return ownRobotID;
-//	}
+	/**
+	 * Looks up the own robot's ID with the system config's local hostname.
+	 * @return The own robot's ID
+	 */
+	int SystemConfig::getOwnRobotID()
+	{
+		return SystemConfig::getRobotID(SystemConfig::getHostname());
+	}
+
+	/**
+	 * Looks up the robot's ID with the given name.
+	 * @return The robot's ID
+	 */
+	int SystemConfig::getRobotID(const string& name)
+	{
+		Configuration *tmp = (*SystemConfig::getInstance())["Globals"];
+		int ownRobotID = tmp->get<int>("Globals", "Team", name.c_str(), "ID", NULL);
+		return ownRobotID;
+	}
 
 	string SystemConfig::getRootPath()
 	{
@@ -191,27 +195,27 @@ namespace supplementary
 		this->configPath = configPath;
 	}
 
-//	void SystemConfig::resetHostname()
-//	{
-//		char* envname = ::getenv("ROBOT");
-//		if ((envname == NULL) || ((*envname) == 0x0))
-//		{
-//			char hn[1024];
-//			hn[1023] = '\0';
-//			gethostname(hn, 1023);
-//			SystemConfig::hostname = hn;
-//		}
-//		else
-//		{
-//			hostname = envname;
-//		}
-//		configs.clear();
-//	}
+	void SystemConfig::resetHostname()
+	{
+		char* envname = ::getenv("ROBOT");
+		if ((envname == NULL) || ((*envname) == 0x0))
+		{
+			char hn[1024];
+			hn[1023] = '\0';
+			gethostname(hn, 1023);
+			SystemConfig::hostname = hn;
+		}
+		else
+		{
+			hostname = envname;
+		}
+		configs.clear();
+	}
 
-//	string SystemConfig::robotNodeName(const string& nodeName)
-//	{
-//		return SystemConfig::getHostname() + NODE_NAME_SEPERATOR + nodeName;
-//	}
+	string SystemConfig::robotNodeName(const string& nodeName)
+	{
+		return SystemConfig::getHostname() + NODE_NAME_SEPERATOR + nodeName;
+	}
 
 	string SystemConfig::getEnv(const string & var)
 	{
@@ -227,6 +231,5 @@ namespace supplementary
 			return val;
 		}
 	}
-
 
 }

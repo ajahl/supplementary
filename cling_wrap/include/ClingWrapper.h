@@ -51,7 +51,9 @@ namespace supplementary
 		void addKnowledgeFile(std::string path);
 		virtual	bool onModel(const Clasp::Solver& s, const Clasp::Model& m);
 		void printLastModel(bool verbose = false);
+		string toStringLastModel(bool verbose = false);
 
+                std::shared_ptr<External> const getExternal(const char* p_value);
                 std::shared_ptr<External> const getExternal(std::string const &name, Gringo::FWValVec args);
 		std::shared_ptr<External> const getExternal(std::string const &name, Gringo::FWValVec args, bool const assign);
                 std::shared_ptr<External> const getExternal(std::string const &name, Gringo::FWValVec args,
@@ -60,6 +62,9 @@ namespace supplementary
                                                             std::string const &ground, Gringo::FWValVec groundArgs, bool const assign);
 
                 bool query(std::string const &name, Gringo::FWValVec args);
+                std::unique_ptr<std::vector<Gringo::Value>> queryAllTrue(std::string const &name, Gringo::FWValVec args);
+                std::unique_ptr<std::vector<Gringo::Value>> queryAllTrue(std::shared_ptr<Gringo::Value> query);
+                std::unique_ptr<std::vector<Gringo::Value>> queryAllTrue(Gringo::Value* query);
 
                 void registerLiteral(unsigned int literal, Gringo::Value value);
                 std::shared_ptr<BoolLiteral> const getBoolLiteral(std::string const &name, Gringo::FWValVec args);
@@ -83,6 +88,13 @@ namespace supplementary
 		const Clasp::Solver* lastSolver;
 		std::vector<std::tuple<unsigned int, Gringo::Value>> existingLiterals;
 		std::vector<std::shared_ptr<BaseLiteral>> baseLiterals;
+
+	public:
+                static Gringo::Value splitASPExternalString(const char* p_aspString);
+                static Gringo::Value splitASPExternalString(char* p_aspString);
+
+	private:
+                static void toGringoValue(const char* p_string,  std::vector<Gringo::Value>* vec);
 	};
 
 } /* namespace supplementary */

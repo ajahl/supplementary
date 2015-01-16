@@ -128,6 +128,9 @@ namespace supplementary
 
 	vector<string> FileSystem::findAllFiles(string path, string ending)
 	{
+		cout << "FileSystem.cpp: Come on, who did use this method, but did not implement it!!??" << endl;
+
+		throw new exception ();
 		return vector<string>();
 	}
 
@@ -251,7 +254,7 @@ namespace supplementary
 	bool FileSystem::createDirectory(string path, int rights)
 	{
 		string result = "";
-		int pos;
+		unsigned int pos;
 		while ((pos = path.find('/')) != string::npos)
 		{
 			result = result + path.substr(0, pos) + "/";
@@ -259,7 +262,7 @@ namespace supplementary
 			{
 				if (!supplementary::FileSystem::isDirectory(result))
 				{
-					if (int res = mkdir(result.c_str(), 0777) != 0)
+					if (mkdir(result.c_str(), 0777) != 0)
 					{
 						return false;
 					}

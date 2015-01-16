@@ -31,22 +31,24 @@ namespace supplementary
 		static mutex configsMapMutex;
 		static map<string, shared_ptr<Configuration> > configs;
 		static map<string, shared_ptr<Configuration> > newConfigs;
-//		static const char NODE_NAME_SEPERATOR = '_';
+		static const char NODE_NAME_SEPERATOR = '_';
 
 	public:
 		static SystemConfig* getInstance();
 		static void shutdown();
 		static string robotNodeName(const string& nodeName);
-		static int GetOwnRobotID();
+		static int getOwnRobotID();
+		static int getRobotID(const string& name);
 		static string getHostname();
 		static void setHostname(string newHostname);
-		//static void resetHostname();
+		static void resetHostname();
 		Configuration *operator[](const string s);
 		string getRootPath();
 		string getConfigPath();
 		void setRootPath(string rootPath);
 		void setConfigPath(string configPath);
 		static string getEnv(const string& var);
+
 
 	private:
 		SystemConfig();
