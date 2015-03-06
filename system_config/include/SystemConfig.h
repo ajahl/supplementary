@@ -32,6 +32,7 @@ namespace supplementary
 		static map<string, shared_ptr<Configuration> > configs;
 		static map<string, shared_ptr<Configuration> > newConfigs;
 		static const char NODE_NAME_SEPERATOR = '_';
+		static shared_ptr<Configuration> uniConf;
 
 	public:
 		static SystemConfig* getInstance();
@@ -48,11 +49,17 @@ namespace supplementary
 		void setRootPath(string rootPath);
 		void setConfigPath(string configPath);
 		static string getEnv(const string& var);
+		void collectConfigs();
+
 
 
 	private:
 		SystemConfig();
 		~SystemConfig(){};
+		void getAllConfigs(string path);
+		void createUniConf(shared_ptr<Configuration> conf, string fileName);
+		void writeSections(ConfigNode* configNode, string section);
+		void writeNewValues(string value, string path);
 	};
 }
 #endif /* SYSTEMCONFIG_H_ */

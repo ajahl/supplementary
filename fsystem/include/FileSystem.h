@@ -19,6 +19,7 @@ using namespace std;
 #include <sys/stat.h>
 #include <dirent.h>
 #include <iostream>
+#include <string.h>
 
 namespace supplementary
 {

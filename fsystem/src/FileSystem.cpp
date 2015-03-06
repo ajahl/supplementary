@@ -128,10 +128,51 @@ namespace supplementary
 
 	vector<string> FileSystem::findAllFiles(string path, string ending)
 	{
-		cout << "FileSystem.cpp: Come on, who did use this method, but did not implement it!!??" << endl;
+		cout << "FileSystem.cpp: Come on, who did use this method, but did not implement it!!?? Only path!!!" << endl;
 
-		throw new exception ();
-		return vector<string>();
+		vector<string> allPaths;
+//		vector<string> allPaths2;
+//		DIR *dir;
+//		string name;
+//		string path2;
+//		int depth;
+//		int type;
+//		struct dirent *ent;
+//		int i;
+//		if ((dir = opendir(path.c_str())) != NULL) {
+//			while ((ent = readdir(dir)) != NULL) {
+//				name = ent->d_name;
+//				type = (int)ent->d_type;
+//				//name = name  + "(" + to_string(type) + ")";
+//				if(name != "." && name != ".." && type == 8)
+//				{
+//					cout << "FÜGE EIN: " << name << endl;
+//					allPaths.push_back(name);
+//				}
+//				if(name != "." && name != ".." && type == 4)
+//				{
+//					path2 = path + "/" + ent->d_name;
+//					cout << "NEW PATH: " << path2 << endl;
+//					allPaths2 = FileSystem::findAllFiles(path2, path2);
+//					for(int i = 0; i < (allPaths2.size() - 1); i++)
+//					{
+//						if(allPaths2.size() != 0)
+//						{
+//							if(allPaths2[i].find(".conf") > 0)
+//							{
+//								cout << "IM FOR: " <<allPaths2[i] << endl;
+//								allPaths.push_back(allPaths2[i]);
+//							}
+//						}
+//					}
+//				}
+//			}
+//			closedir(dir);
+//		}
+//		n = scandir(path.c_str(), &namelist, 0,  alphasort);
+//		throw new exception ();
+
+		return allPaths;
 	}
 
 	/**
