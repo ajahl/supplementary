@@ -6,6 +6,7 @@ namespace supplementary
 {
 	// Initialize static variables
 	string SystemConfig::rootPath;
+	string SystemConfig::logPath;
 	string SystemConfig::configPath;
 	string SystemConfig::hostname;
 	mutex SystemConfig::configsMapMutex;
@@ -64,6 +65,15 @@ namespace supplementary
 			configPath = temp + "/";
 		}
 
+		logPath = FileSystem::combinePaths(rootPath, "/log/temp");
+		if (!FileSystem::pathExists(logPath))
+		{
+			if (!FileSystem::createDirectory(logPath))
+			{
+				cerr << "SC: Could not create log directory: " << logPath << endl;
+			}
+		}
+
 		// set the hostname (1. by env-variable 2. by gethostname)
 		char* envname = ::getenv("ROBOT");
 		if ((envname == NULL) || ((*envname) == 0x0))
@@ -78,10 +88,10 @@ namespace supplementary
 			hostname = envname;
 		}
 
-		cout << "Root:       " << rootPath << endl;
-		cout << "ConfigRoot: " << configPath << endl;
-		cout << "Hostname:   " << hostname << endl;
-
+		cout << "SC: Root:          " << rootPath << endl;
+		cout << "SC: ConfigRoot:    " << configPath << endl;
+		cout << "SC: Hostname:      " << hostname << endl;
+		cout << "SC: Loggin Folder: " << logPath << endl;
 		collectConfigs();
 	}
 
@@ -131,7 +141,7 @@ namespace supplementary
 
 		for (size_t i = 0; i < files.size(); i++)
 		{
-			if (FileSystem::fileExists(files[i]))
+			if (FileSystem::pathExists(files[i]))
 			{
 				lock_guard<mutex> lock(configsMapMutex);
 
@@ -181,6 +191,11 @@ namespace supplementary
 	string SystemConfig::getConfigPath()
 	{
 		return configPath;
+	}
+
+	string SystemConfig::getLogPath()
+	{
+		return logPath;
 	}
 
 	string SystemConfig::getHostname()
