@@ -287,7 +287,7 @@ namespace supplementary
 		for (size_t i = 0; i < allPaths.size(); i++)
 		{
 			cout << "Füge ein in configs: " << allPaths[i] << endl;
-			if (FileSystem::fileExists(allPaths[i]))
+			if (FileSystem::pathExists(allPaths[i]))
 			{
 				lock_guard<mutex> lock(configsMapMutex);
 
