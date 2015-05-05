@@ -200,9 +200,9 @@ namespace supplementary
 	}
 
 	/**
-	 * Checks whether a given file exists.
+	 * Checks whether a given path exists.
 	 * @param filename Absolute path to file.
-	 * @return true if the file exists, false otherwise.
+	 * @return true if the path exists, false otherwise.
 	 */
 	bool FileSystem::pathExists(const string& filename)
 	{
