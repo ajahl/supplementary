@@ -362,7 +362,8 @@ while (0)
 /* This is for the 32-bit subsystem on x86-64.  */
 
 #define sigcontext_struct sigcontext
-#include <java-signal-aux.h>
+//may be a 32 bit solution with libjava:
+//#include <java-signal-aux.h>
 
 #endif /* __x86_64__ */
 
@@ -382,7 +383,7 @@ static void unblock_signal(int signum __attribute__((__unused__)))
 #endif
 }
 #endif
-
+#ifdef __x86_64__
 SIGNAL_HANDLER(catch_segv)
 {
     unblock_signal(SIGSEGV);
@@ -400,10 +401,13 @@ SIGNAL_HANDLER(catch_fpe)
 #endif
    segfaultdebug::handle_fpe();
 }
+#endif // __x86_64__
 
 namespace segfaultdebug {
     void init_segfault_exceptions() {
+#ifdef __x86_64__
         INIT_SEGV;
+#endif // __x86_64__
     }
 }
 
