@@ -37,6 +37,7 @@ namespace sysConfRosProxy
 			ros::AsyncSpinner* spinner;
 
 			ros::Publisher ChangeAtrPublisher;
+			ros::Subscriber ChangeAtrSubscriber;
 
 			bool isRunning;
 	};

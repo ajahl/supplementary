@@ -9,12 +9,20 @@ namespace supplementary
 	string SystemConfig::logPath;
 	string SystemConfig::configPath;
 	string SystemConfig::hostname;
+	bool SystemConfig::collectRoot;
+	int SystemConfig::posCounter;
+	int SystemConfig::rootCounter;
+	int SystemConfig::hostCounter;
 	mutex SystemConfig::configsMapMutex;
 	map<string, shared_ptr<Configuration> > SystemConfig::configs;
 	map<string, shared_ptr<Configuration> > SystemConfig::newConfigs;
+	map<string, shared_ptr<Configuration> > SystemConfig::hostConfigs;
+	map<string, string> SystemConfig::atrPaths;
+	map<string, string> SystemConfig::rootPaths;
 	shared_ptr<Configuration> SystemConfig::uniConf;
 	string uniConfPath;
 	vector<string> allPaths;
+	vector<string> allConfigs;
 	vector<int> depth;
 
 	/**
@@ -92,6 +100,9 @@ namespace supplementary
 		cout << "SC: ConfigRoot:    " << configPath << endl;
 		cout << "SC: Hostname:      " << hostname << endl;
 		cout << "SC: Loggin Folder: " << logPath << endl;
+		collectRoot = true;
+		collectConfigs();
+		collectRoot = false;
 		collectConfigs();
 	}
 
@@ -107,7 +118,6 @@ namespace supplementary
 	 * @return The demanded configuration.
 	 */
 
-	//AFTER SYSTEMCONFIG 2.0 unused
 	Configuration* SystemConfig::operator[](const string s)
 	{
 		{
@@ -120,46 +130,46 @@ namespace supplementary
 				return itr->second.get();
 			}
 		}
-
-		vector<string> files;
-
-		string file = s + ".conf";
-
-		// Check the local config
-		files.push_back(file);
-
-		// Check the host-specific config
-		string tempConfigPath = configPath;
-		tempConfigPath = FileSystem::combinePaths(tempConfigPath, hostname);
-		tempConfigPath = FileSystem::combinePaths(tempConfigPath, file);
-		files.push_back(tempConfigPath);
-
-		// Check the global config
-		tempConfigPath = configPath;
-		tempConfigPath = FileSystem::combinePaths(tempConfigPath, file);
-		files.push_back(tempConfigPath);
-
-		for (size_t i = 0; i < files.size(); i++)
-		{
-			if (FileSystem::pathExists(files[i]))
-			{
-				lock_guard<mutex> lock(configsMapMutex);
-
-				//shared_ptr<Configuration> result = shared_ptr<Configuration>(new Configuration(files[i]));
-				shared_ptr<Configuration> result = make_shared<Configuration>(files[i]);
-				configs[s] = result;
-				cout << "IM operator" << endl;
-
-				return result.get();
-			}
-		}
-
-		// config-file not found, print error message
-		cerr << "Configuration file " << file << " not found in either location:" << endl;
-		for (size_t i = 0; i < files.size(); i++)
-		{
-			cerr << "- " << files[i] << endl;
-		}
+//
+//		vector<string> files;
+//
+//		string file = s + ".conf";
+//
+//		// Check the local config
+//		files.push_back(file);
+//
+//		// Check the host-specific config
+//		string tempConfigPath = configPath;
+//		tempConfigPath = FileSystem::combinePaths(tempConfigPath, hostname);
+//		tempConfigPath = FileSystem::combinePaths(tempConfigPath, file);
+//		files.push_back(tempConfigPath);
+//
+//		// Check the global config
+//		tempConfigPath = configPath;
+//		tempConfigPath = FileSystem::combinePaths(tempConfigPath, file);
+//		files.push_back(tempConfigPath);
+//
+//		for (size_t i = 0; i < files.size(); i++)
+//		{
+//			if (FileSystem::pathExists(files[i]))
+//			{
+//				lock_guard<mutex> lock(configsMapMutex);
+//
+//				//shared_ptr<Configuration> result = shared_ptr<Configuration>(new Configuration(files[i]));
+//				shared_ptr<Configuration> result = make_shared<Configuration>(files[i]);
+//				configs[s] = result;
+//				cout << "IM operator" << endl;
+//
+//				return result.get();
+//			}
+//		}
+//
+//		// config-file not found, print error message
+//		cerr << "Configuration file " << file << " not found in either location:" << endl;
+//		for (size_t i = 0; i < files.size(); i++)
+//		{
+//			cerr << "- " << files[i] << endl;
+//		}
 		return nullptr;
 	}
 
@@ -256,65 +266,6 @@ namespace supplementary
 		}
 	}
 
-	void SystemConfig::collectConfigs()
-	{
-		string path = getConfigPath();
-		path = path.substr(0, (getConfigPath().length()-1));
-		SystemConfig::getAllConfigs(path);
-		string s;
-		int x;
-//		cout << "AllPaths size: " << allPaths.size() << endl;
-		for(int i = 0; i < allPaths.size(); i++)
-		{
-			cout << "ALL FILES: " << allPaths[i] << endl;
-			x = allPaths[i].find(".conf");
-			if(x > 0)
-			{
-				s = allPaths[i];
-				s = allPaths[i].substr(0, s.find('.'));
-
-			}
-//			cout << "operator: " << s << endl;
-		}
-
-//		for (size_t i = 0; i < allPaths.size(); i++)
-//		{
-//			cout << "Füge ein in configs: " << allPaths[i] << endl;
-//			shared_ptr<Configuration> result = make_shared<Configuration>(allPaths[i]);
-//			configs[allPaths[i]] = result;
-//		}
-
-		for (size_t i = 0; i < allPaths.size(); i++)
-		{
-			cout << "Füge ein in configs: " << allPaths[i] << endl;
-			if (FileSystem::fileExists(allPaths[i]))
-			{
-				lock_guard<mutex> lock(configsMapMutex);
-
-				//shared_ptr<Configuration> result = shared_ptr<Configuration>(new Configuration(files[i]));
-				shared_ptr<Configuration> result = make_shared<Configuration>(allPaths[i]);
-				configs[allPaths[i]] = result;
-				if(allPaths[i] == uniConfPath){
-					uniConf = result;
-				}
-			}
-		}
-
-
-		map<string, shared_ptr<Configuration>>::iterator iter;
-//		cout << "configs size: " << configs.size() << endl;
-		for(iter = configs.begin() ; iter != configs.end(); iter ++ )
-		{
-			cout << "ALL CONFIGS: " << iter->first << endl;
-//			cout << iter->second.get()->serialize() << endl;
-//			cout << iter->second.get()->get<float>("Globals.Dimensions.DiameterBall", NULL) << endl;
-//			cout << "Config-Filename: " << configs[iter->first]->get<float>("Globals", NULL) << endl;
-			if(iter->first != uniConfPath){
-				createUniConf(iter->second, iter->first);
-			}
-		}
-	}
-
 	void SystemConfig::getAllConfigs(string path)
 	{
 		vector<string> allPaths2;
@@ -325,33 +276,109 @@ namespace supplementary
 		bool entered = false;
 		struct dirent *ent;
 		size_t countDepth;
+		vector<string>::iterator iter_allPaths;
+		vector<string>::iterator iter_allPaths2;
+
 		int i;
-		if ((dir = opendir(path.c_str())) != NULL) {
-			while ((ent = readdir(dir)) != NULL) {
+		if ((dir = opendir(path.c_str())) != NULL)
+		{
+			while ((ent = readdir(dir)) != NULL)
+			{
 				name = ent->d_name;
 				type = (int)ent->d_type;
+				if(name == "." || name == "..")
+				{
+					continue;
+				}
+				cout << "IM NAME: " << name << endl;
+
 				if(name != "." && name != ".." && type == 8)
 				{
-					if(entered) {
-						cerr << "More than one conf-File in the same folder: " << path << endl;
-						exit(1);
-					}
-					countDepth = std::count(path.begin(), path.end(), '/');
-					cout << "FÜGE EIN: " << name << endl;
-//					lDepth = ent->d_ino;
-					cout << "OFF: " << countDepth << endl;
-					if(find(depth.begin(), depth.end(), countDepth) != depth.end()){
-						cerr << "More than one conf-File in the same folder-hierarchy: " << path << endl;
-						exit(1);
-					}
-					entered = true;
-					allPaths.push_back(path + "/" + name);
-					depth.push_back(countDepth);
-					if(name == "Globals.conf"){
-						uniConfPath = path + "/" + name;
+					if((path + "/") != configPath || collectRoot == true)
+					{
+						cout << endl;
+						countDepth = std::count(path.begin(), path.end(), '/');
+						cout << "FÜGE EIN: " << name << endl;
+//						cout << "OFF: " << countDepth << endl;
+						cout << "PATH: " << path << endl;
+						entered = true;
+						string newPath1, newPath2, newHost;
+						for(int i = 0; i< allPaths.size(); i++)
+						{
+							if(allPaths[i].find(name) == (allPaths[i].size() - name.size()))
+							{
+								cout << endl;
+								if(allPaths[i].size() > path.size())
+								{
+									newPath1 = path + "/";
+									newPath2 = allPaths[i].substr(0, path.size()+1);
+								}
+								else
+								{
+									newPath1 = path.substr(0, allPaths[i].size() - name.length());
+									newPath2 = allPaths[i].substr(0, allPaths[i].size() - name.length());
+								}
+
+								newHost = "/" + hostname;
+//								cout << "PATHSIZE: " << path.length() << endl;
+//								cout << "PATH: " << path << endl;
+								cout << "NEWPATH1 " << newPath1 << endl;
+								cout << "NEWPATH2 " << newPath2 << endl;
+//								cout << "CONFIGPATH: " << configPath << endl;
+//								cout << "CONFIGSIZE: " << configPath.size() << endl;
+//								cout << "ALLPATHS2: " << allPaths[i] << endl;
+//								cout << "FIND1: " << path.find(newPath1) << endl;
+//								cout << "FIND2: " << allPaths[i].find(newPath2) << endl;
+								if(path != configPath)
+								{
+									if(newPath1.compare(newPath2))
+									{
+										if((newPath1.find(newHost) == configPath.size()-1&& newPath2.find(newHost) == configPath.size()-1)||
+										   (newPath1.find(newHost) != configPath.size()-1&& newPath2.find(newHost) != configPath.size()-1))
+										{
+											cout << "PROBLEM UNGLEICH TROTZ HOST" << endl;
+											exit(1);
+										}
+									}
+								}
+							}
+						}
+						if(collectRoot)
+						{
+							cout << "ROOT" << endl;
+							allPaths.insert(allPaths.begin(), path + "/" + name);
+							cout << "ROOTCOUNTER: " << rootCounter <<  endl;
+							cout << "POSCOUNTER: " << posCounter << endl;
+							rootCounter++;
+							posCounter++;
+							hostCounter++;
+
+						}
+						else if(path.find(newHost) != configPath.size()-1)
+						{
+							cout << "NO HOST" << endl;
+							iter_allPaths = allPaths.begin();
+							iter_allPaths += rootCounter;
+							allPaths.insert(iter_allPaths, path + "/" + name);
+							cout << "ROOTCOUNTER: " << rootCounter <<  endl;
+							cout << "POSCOUNTER: " << posCounter << endl;
+							posCounter++;
+							hostCounter++;
+
+						}
+						else
+						{
+							cout << "HOST" << endl;
+							iter_allPaths2 = allPaths.begin();
+							iter_allPaths2 += hostCounter;
+							allPaths.insert(iter_allPaths2, path + "/" + name);
+							cout << "ROOTCOUNTER: " << rootCounter <<  endl;
+							cout << "POSCOUNTER: " << posCounter << endl;
+							cout << "HOSTCOUNTER: " << hostCounter << endl;
+						}
 					}
 				}
-				if(name != "." && name != ".." && type == 4)
+				if(name != "." && name != ".." && type == 4 && collectRoot == false)
 				{
 //					cout << "OLD PATH: " << path << endl;
 					path2 = path + "/" + ent->d_name;
@@ -362,42 +389,114 @@ namespace supplementary
 			closedir(dir);
 		}
 	}
+	void SystemConfig::collectConfigs()
+	{
+		string path = getConfigPath();
+		path = path.substr(0, (getConfigPath().length()-1));
+		SystemConfig::getAllConfigs(path);
+		string newRootPath;
+		string confName;
+		int pathPos;
+		int filePos;
+//		cout << "AllPaths size: " << allPaths.size() << endl;
+		for(int i = 0; i < allPaths.size(); i++)
+		{
+			cout << endl;
+			cout << "ALL FILES: " << allPaths[i] << endl;
+			pathPos = allPaths[i].find_last_of("/");
+			filePos = allPaths[i].find(".");
+			filePos = filePos -pathPos;
+			if(pathPos > 0)
+			{
+				newRootPath = allPaths[i].substr(0, pathPos+1);
+				confName = allPaths[i].substr(pathPos+1, filePos-1);
+			}
+			cout << "newRootPath: " << newRootPath << endl;
+			cout << "confName: " << confName << endl;
+//			cout << "operator: " << s << endl;
+
+			if (FileSystem::pathExists(allPaths[i]))
+			{
+				lock_guard<mutex> lock(configsMapMutex);
+
+				//shared_ptr<Configuration> result = shared_ptr<Configuration>(new Configuration(files[i]));
+				shared_ptr<Configuration> result = make_shared<Configuration>(allPaths[i]);
+//				if(allPaths[i] == uniConfPath){
+//					uniConf = result;
+//				}
+				if(collectRoot)
+				{
+					if(newRootPath == configPath)
+					{
+						if(configs[confName] != NULL)
+						{
+							cout <<"More than one of same configs ind root"<< endl;
+						}
+						else
+						{
+							configs[confName] = result;
+							cout << "Füge ein in configs: " << confName << endl;
+							cout << endl;
+						}
+					}
+				}
+				else{
+					if(newRootPath != configPath)
+					{
+						newConfigs[confName] = result;
+						cout << "Füge ein in newConfigs: " << confName << endl;
+						cout << endl;
+					}
+					createUniConf(result, allPaths[i]);
+				}
+			}
+		}
+
+		cout << endl;
+		map<string, shared_ptr<Configuration>>::iterator iter_config;
+		map<string, shared_ptr<Configuration>>::iterator iter_newConfig;
+		map<string, string>::iterator iter_atrPaths;
+
+//		cout << "configs size: " << configs.size() << endl;
+		for(iter_config = configs.begin() ; iter_config != configs.end(); iter_config++ )
+		{
+			cout << "ALL CONFIGS: " << iter_config->first << endl;
+		}
+		for(iter_newConfig = newConfigs.begin() ; iter_newConfig != newConfigs.end(); iter_newConfig ++ )
+		{
+			cout << "ALL NEWCONFIGS: " << iter_newConfig->first << endl;
+		}
+//		for(iter_atrPaths = atrPaths.begin() ; iter_atrPaths != atrPaths.end(); iter_atrPaths ++ )
+//		{
+//			cout << "ALL atrPaths(FIRST): " << iter_atrPaths->first << endl;
+//			cout << "ALL atrPaths(SECOND): " << iter_atrPaths->second << endl;
+//		}
+	}
 	void SystemConfig::createUniConf(shared_ptr<Configuration> conf, string fileName){
 		vector<ConfigNode*>::iterator iter;
 		const char *confName;
 		const char *confPath;
 		int fileBegin = fileName.find_last_of("/");
 		string confFilename = fileName.substr((fileBegin+1), (fileName.length()));
+		string confFolder = fileName.substr(0, fileBegin+1);
 		confFilename = confFilename.substr(0, confFilename.length()-5);
 		confName = confFilename.data();
 		cout << "CONFFILENAME: " << confFilename << endl;
+		cout << "CONFFOLDER: " << confFolder << endl;
+
+		allConfigs.push_back(confFilename);
 		shared_ptr<vector<ConfigNode*> > confNodes = conf->getNodes(confName, NULL);
 //		cout << "FILENAME: " << fileName << endl;
 		for(iter = confNodes->begin(); iter != confNodes->end(); iter ++ ){
 			cout <<"UniCreate: " << iter[0]->getName() << endl;
 			confPath = iter[0]->getName().data();
-//			cout << "CREATEUNI: " << conf->getSections(confPath, NULL)->back().data() << endl;
-			writeSections(iter[0], "");
-//			cout << "Children: " << iter[0]->getChildren()->back()->getName() << endl;
-//			cout << "Value: " << iter[0]->getChildren()->back()->getValue() << endl;
-//			cout << uniConf->serialize() << endl;
-//			if(uniConf->get<float>("Globals.TestSectionValue2", NULL) !=NULL){
-//				cout <<"GEFUNDEN: " << uniConf->get<float>("Globals.TestSectionValue2", NULL) << endl;
-//				uniConf->set(iter[0]->getChildren()->back()->getValue(), "Globals.TestSectionValue2", NULL);
-//				cout <<"Neu setzen: " << uniConf->get<float>("Globals.TestSectionValue2", NULL) << endl;
-//			}
-//			cout << "TEST" << endl;
-//			cout << "Name: " << iter[0]->getName() << endl;
-//			cout <<"Neu gesetzt bei uniConf: " << uniConf->get<float>("Globals.TestSectionValue2", NULL) << endl;
-
+			writeSections(iter[0], "", confFilename, confFolder);
 		}
-		cout << uniConf->serialize() << endl;
 	}
-	void SystemConfig::writeSections(ConfigNode* configNode, string section){
+	void SystemConfig::writeSections(ConfigNode* configNode, string section, string fileName, string filePath){
 		vector<ConfigNodePtr>::iterator iter;
-		vector<ConfigNodePtr>::iterator iter2;
 		string newPath;
-		cout << "Nochmal in WS: " << section << endl;
+		cout << "In Section: " << section << endl;
 		if(configNode->getChildren() != NULL){
 			for(iter = configNode->getChildren()->begin(); iter != configNode->getChildren()->end(); iter ++ ){
 				if(iter[0]->getType() == 0){
@@ -407,8 +506,8 @@ namespace supplementary
 					else{
 						newPath = section + "." + iter[0]->getName();
 					}
-					cout << "NEWPATH: " << newPath << endl;
-					writeSections(iter[0].get(), newPath);
+//					cout << "NEWPATH: " << newPath << endl;
+					writeSections(iter[0].get(), newPath, fileName, filePath);
 				}
 				if(iter[0]->getType() == 1){
 					if(section == ""){
@@ -417,9 +516,16 @@ namespace supplementary
 					else{
 						newPath = section + "." + iter[0]->getName();
 					}
-					cout <<"NAME: " << iter[0]->getName() << endl;
-					cout << "VALUE: " << iter[0]->getValue() << endl;
-					writeNewValues(iter[0]->getValue(), newPath);
+//					cout <<"NAME: " << iter[0]->getName() << endl;
+//					cout << "VALUE: " << iter[0]->getValue() << endl;
+					newPath = fileName + "." + newPath;
+//					cout << "NEWPATH: " << newPath << endl;
+//					cout << "FIND: " << filePath.find(atrPaths[newPath]) << endl;
+//					cout << "FILEPATH: " << filePath << endl;
+//					cout << "ATRPATH: " << atrPaths[newPath] << endl;
+
+					atrPaths[newPath] = filePath;
+					writeNewValues(iter[0]->getValue(), newPath, fileName);
 				}
 				if(iter[0]->getType() == 2){
 //					cout << "COMMENT" << endl;
@@ -427,16 +533,26 @@ namespace supplementary
 			}
 		}
 	}
-	void SystemConfig::writeNewValues(string value, string path){
-		string newPath = "Globals." + path;
+	void SystemConfig::writeNewValues(string value, string path, string config){
+//		string newPath = "Globals." + path;
 //		cout << uniConf->serialize() << endl;
+//		cout << "PATH: " << path.data() << endl;
+//		cout << "CONFIG: " << config << endl;
+
 		try{
-			uniConf->get<string>(newPath.data(), NULL);
+//			cout << "PATH IN WNV: " << path << endl;
+//			cout << "FILEPATH: " << atrPaths[path] << endl;
+			configs[config]->get<string>(path.data(), NULL);
 		}catch (...) {
-			cout << newPath.data() << " nicht in 'Globals' vorhanden" << endl;
+			cout << path.data() << " nicht in der Root-Config vorhanden" << endl;
 			exit(1);
 		}
-		cout << "Overwrite: " << newPath << endl;
-		uniConf->set(value, newPath.data(), NULL);
+//		cout << "Overwrite: " << path << endl;
+		configs[config]->set(value, path.data(), NULL);
+	}
+	bool SystemConfig::checkHierarchy()
+	{
+
+		return true;
 	}
 }
