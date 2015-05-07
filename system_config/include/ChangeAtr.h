@@ -5,6 +5,8 @@
 #ifndef CHANGEATR_H_
 #define CHANGEATR_H_
 
+#include <tuple>
+
 using namespace std;
 
 namespace supplementary
@@ -24,16 +26,11 @@ namespace supplementary
 			this->attribute = get<0>(s);
 			this->value 	= get<1>(s);
 		}
-
-//		stdChangeAtr toStandard()
-//		{
-//			vector<stdEntryPointRobot> r;
-//			for (EntryPointRobots& e : entryPointRobots)
-//			{
-//				r.push_back(move(e.toStandard()));
-//			}
-//			return move(make_tuple(senderID, planId, parentState, planType, authority, move(r)));
-//		}
+		stdChangeAtr toStandard()
+				{
+					return move(make_tuple(attribute, value));
+				}
+	};
 }
 
 #endif /* CHANGEATR_H_ */

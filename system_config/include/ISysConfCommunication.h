@@ -10,19 +10,25 @@
 
 namespace supplementary {
 
+	struct ChangeAtr;
+
 	class ISysConfCommunication
 	{
-	public:
-		ISysConfCommunication(SystemConfig* sc);
-		virtual ~ISysConfCommunication(){}
+		public:
+			ISysConfCommunication(SystemConfig* sc);
+			virtual ~ISysConfCommunication(){}
 
-		virtual void sendValue(ChangeAtr& ca);
+			virtual void sendChangeAtr(ChangeAtr& ca) = 0;
 
-		virtual void handleSendValue();
+			virtual void tick() {};
 
-		virtual void tick() {};
-		virtual void startCommunication() = 0;
-		virtual void stopCommunication() = 0;
+			virtual void onChangeAtr(shared_ptr<ChangeAtr> scca) = 0;
+
+
+			virtual void startCommunication() = 0;
+			virtual void stopCommunication() = 0;
+		protected:
+			SystemConfig* sc;
 	};
 
 }  // namespace ISysConfCommunication

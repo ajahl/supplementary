@@ -84,7 +84,7 @@ find_package(catkin REQUIRED COMPONENTS
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
   INCLUDE_DIRS include
-  LIBRARIES sysConf_ros_proxy
+  LIBRARIES sys_conf_ros_proxy
   CATKIN_DEPENDS roscpp rospy std_msgs
   #DEPENDS system_lib
 )
@@ -117,6 +117,7 @@ include_directories(
 #message("<<<<< sysconf catkin libraries: ${catkin_LIBRARIES}")
  target_link_libraries(sys_conf_ros_proxy
    ${catkin_LIBRARIES}
+   system_config
  )
 
 #############

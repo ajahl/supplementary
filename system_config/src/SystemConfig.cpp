@@ -294,6 +294,7 @@ namespace supplementary
 
 				if(name != "." && name != ".." && type == 8)
 				{
+					cout << "DATEI" << endl;
 					if((path + "/") != configPath || collectRoot == true)
 					{
 						cout << endl;
@@ -347,8 +348,9 @@ namespace supplementary
 						{
 							cout << "ROOT" << endl;
 							allPaths.insert(allPaths.begin(), path + "/" + name);
-							cout << "ROOTCOUNTER: " << rootCounter <<  endl;
-							cout << "POSCOUNTER: " << posCounter << endl;
+//							cout << "COLLECT: allPathsBegin: " << allPaths[0].data() << endl;
+//							cout << "ROOTCOUNTER: " << rootCounter <<  endl;
+//							cout << "POSCOUNTER: " << posCounter << endl;
 							rootCounter++;
 							posCounter++;
 							hostCounter++;
@@ -360,8 +362,8 @@ namespace supplementary
 							iter_allPaths = allPaths.begin();
 							iter_allPaths += rootCounter;
 							allPaths.insert(iter_allPaths, path + "/" + name);
-							cout << "ROOTCOUNTER: " << rootCounter <<  endl;
-							cout << "POSCOUNTER: " << posCounter << endl;
+//							cout << "ROOTCOUNTER: " << rootCounter <<  endl;
+//							cout << "POSCOUNTER: " << posCounter << endl;
 							posCounter++;
 							hostCounter++;
 
@@ -372,14 +374,15 @@ namespace supplementary
 							iter_allPaths2 = allPaths.begin();
 							iter_allPaths2 += hostCounter;
 							allPaths.insert(iter_allPaths2, path + "/" + name);
-							cout << "ROOTCOUNTER: " << rootCounter <<  endl;
-							cout << "POSCOUNTER: " << posCounter << endl;
-							cout << "HOSTCOUNTER: " << hostCounter << endl;
+//							cout << "ROOTCOUNTER: " << rootCounter <<  endl;
+//							cout << "POSCOUNTER: " << posCounter << endl;
+//							cout << "HOSTCOUNTER: " << hostCounter << endl;
 						}
 					}
 				}
 				if(name != "." && name != ".." && type == 4 && collectRoot == false)
 				{
+					cout << "ORDNER" << endl;
 //					cout << "OLD PATH: " << path << endl;
 					path2 = path + "/" + ent->d_name;
 //					cout << "NEW PATH: " << path2 << endl;
