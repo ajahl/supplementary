@@ -1,6 +1,7 @@
 using namespace std;
 
 #include "SystemConfig.h"
+#include "ISysConfCommunication.h"
 
 namespace supplementary
 {
@@ -24,6 +25,7 @@ namespace supplementary
 	vector<string> allPaths;
 	vector<string> allConfigs;
 	vector<int> depth;
+	ISysConfCommunication* SystemConfig::communicator;
 
 	/**
 	 * The method for getting the singleton instance.
@@ -108,7 +110,18 @@ namespace supplementary
 
 	void SystemConfig::shutdown()
 	{
+		SystemConfig::communicator->stopCommunication();
+	}
 
+	void SystemConfig::setCommunicator(ISysConfCommunication* communicator)
+	{
+		SystemConfig::communicator = communicator;
+		SystemConfig::communicator->startCommunication();
+	}
+
+	void SystemConfig::onChangeAtr(shared_ptr<ChangeAtr> scca)
+	{
+		cout << "SC: OnChangeAtr - Attribute: " << scca->attribute << " Value: " << scca->value << endl;
 	}
 
 	/**

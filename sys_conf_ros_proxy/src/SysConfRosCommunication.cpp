@@ -72,7 +72,7 @@ namespace sysConfRosProxy
 		sccaPtr->value      = scca->value;
 		if (this->isRunning)
 		{
-			this->onChangeAtr(sccaPtr);
+			this->onChangeAtrReceived(sccaPtr);
 		}
 	}
 	void SysConfRosCommunication::startCommunication()

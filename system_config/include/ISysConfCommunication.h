@@ -22,7 +22,7 @@ namespace supplementary {
 
 			virtual void tick() {};
 
-			virtual void onChangeAtr(shared_ptr<ChangeAtr> scca) = 0;
+			void onChangeAtrReceived(shared_ptr<ChangeAtr> scca);
 
 
 			virtual void startCommunication() = 0;

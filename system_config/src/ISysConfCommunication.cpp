@@ -10,27 +10,21 @@
 #include <iostream>
 #include "SystemConfig.h"
 
-using namespace supplementary;
+using namespace std;
+
+namespace supplementary {
 
 ISysConfCommunication::ISysConfCommunication(SystemConfig* sc)
 {
 	this->sc = sc;
 }
 
-void supplementary::ISysConfCommunication::onChangeAtr(shared_ptr<ChangeAtr> ca)
+void ISysConfCommunication::onChangeAtrReceived(shared_ptr<ChangeAtr> scca)
 {
-	DIR *dir;
-	struct dirent *ent;
-	const char* path = '/home/nida_bjk/testRos';
-	FileSystem::createDirectory(path);
-//	if ((dir = opendir(path)) != NULL)
-//	{
-//		while ((ent = readdir(dir)) != NULL)
-//		{
-//			ent->d_name = 'test';
-//		}
-//	}
+	cout << "ISYSCONF: Attribute: " << scca->attribute << " Value: " << scca->value << endl;
+	sc->onChangeAtr(scca);
 }
 
+}
 
 

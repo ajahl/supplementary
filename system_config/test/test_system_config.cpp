@@ -1,6 +1,8 @@
 #include "SystemConfig.h"
 #include <iostream>
 #include <typeinfo>
+#include "ISysConfCommunication.h"
+#include "SysConfRosCommunication.h"
 #include <gtest/gtest.h>
 
 using namespace supplementary;
@@ -128,12 +130,16 @@ TEST(SystemConfigBasics, readTestValues)
 //	path = path.substr(0, place);
 //	path = path + "src/supplementary/system_config/test";
 	// bring up the SystemConfig with the corresponding path
-	SystemConfig* sc = SystemConfig::getInstance();
 
+	SystemConfig* sc = SystemConfig::getInstance();
+	ISysConfCommunication* communicator = new sysConfRosProxy::SysConfRosCommunication(sc);
+	sc->setCommunicator(communicator);
+
+	sleep (30);
 	Configuration* testConf = sc->operator []("Globals");
 //	cout << "GELESEN: " << testConf->get<string>("Alica.TeamDefault.DefaultRole", NULL) << endl;
 //	cout << "GELESEN: " << testConf->get<string>("Alica.RolePriority.G10Attacker", NULL) << endl;
-	cout << "GELESEN: " << testConf->get<string>("Globals.RolePriority.G10Attacker", NULL) << endl;
+	//cout << "GELESEN: " << testConf->get<string>("Globals.RolePriority.G10Attacker", NULL) << endl;
 
 	// read int
 //	unsigned short uShortTestValue = (*sc)["Test"]->get<unsigned short>("uShortTestValue", NULL);

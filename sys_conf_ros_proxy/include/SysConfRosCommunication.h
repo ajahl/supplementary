@@ -27,6 +27,7 @@ namespace sysConfRosProxy
 			virtual void sendChangeAtr(ChangeAtr& ca);
 			virtual void handleChangeAtrRos(sys_conf_ros_proxy::ChangeAtrPtr scca);
 
+
 			virtual void tick();
 
 			virtual void startCommunication();

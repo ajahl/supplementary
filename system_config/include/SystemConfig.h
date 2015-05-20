@@ -14,6 +14,7 @@ using namespace std;
 
 #include <FileSystem.h>
 
+#include "ChangeAtr.h"
 #include "Configuration.h"
 
 const string DOMAIN_FOLDER = "DOMAIN_FOLDER";
@@ -21,6 +22,8 @@ const string DOMAIN_CONFIG_FOLDER = "DOMAIN_CONFIG_FOLDER";
 
 namespace supplementary
 {
+	class ISysConfCommunication;
+
 	class SystemConfig
 	{
 
@@ -41,6 +44,7 @@ namespace supplementary
 		static map<string, string> atrPaths;
 		static const char NODE_NAME_SEPERATOR = '_';
 		static shared_ptr<Configuration> uniConf;
+		static ISysConfCommunication* communicator;
 
 	public:
 		static SystemConfig* getInstance();
@@ -51,7 +55,8 @@ namespace supplementary
 		static string getHostname();
 		static void setHostname(string newHostname);
 		static void resetHostname();
-
+		static void setCommunicator(ISysConfCommunication* communicator);
+		void onChangeAtr(shared_ptr<ChangeAtr> scca);
 
 		Configuration *operator[](const string s);
 		string getRootPath();
@@ -63,8 +68,6 @@ namespace supplementary
 		void collectConfigs();
 		bool checkHierarchy();
 
-
-
 	private:
 		SystemConfig();
 		~SystemConfig(){};
@@ -72,6 +75,8 @@ namespace supplementary
 		void createUniConf(shared_ptr<Configuration> conf, string fileName);
 		void writeSections(ConfigNode* configNode, string section, string fileName, string filePath);
 		void writeNewValues(string value, string path, string config);
+
+
 	};
 }
 #endif /* SYSTEMCONFIG_H_ */
