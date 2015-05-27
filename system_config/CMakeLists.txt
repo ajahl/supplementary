@@ -11,14 +11,14 @@ set(CMAKE_CXX_FLAGS "-rdynamic -fnon-call-exceptions -ggdb ${CMAKE_CXX_FLAGS}")
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
 if(catkin_FOUND)
-	find_package(catkin REQUIRED fsystem roscpp 
-   rospy
-   std_msgs
-   message_generation
-   sys_conf_ros_proxy)
+	find_package(catkin REQUIRED 
+	    fsystem 
+	    roscpp
+        std_msgs
+    )
 else(catkin_FOUND)
 	set (catkin_INCLUDE_DIRS "${fsystem_INCLUDE_DIRS}")
-	set (catkin_LIBRARIES "fsystem")
+	set (catkin_LIBRARIES "fsystem roscpp std_msgs")
 endif(catkin_FOUND)
 
 ## System dependencies are found with CMake's conventions
@@ -94,7 +94,7 @@ if (catkin_FOUND)
   catkin_package(
    INCLUDE_DIRS include
    LIBRARIES system_config
-   CATKIN_DEPENDS fsystem sys_conf_ros_proxy
+   CATKIN_DEPENDS fsystem roscpp std_msgs
   # DEPENDS system filesystem
   )
 endif(catkin_FOUND)
@@ -123,7 +123,7 @@ add_library(system_config
 add_dependencies(system_config ${catkin_LIBRARIES})
 
 ## Specify libraries to link a library or executable target against
-target_link_libraries(system_config ${catkin_LIBRARIES} sys_conf_ros_proxy)
+target_link_libraries(system_config ${catkin_LIBRARIES})
 
 if (NOT catkin_FOUND)
   target_include_directories(system_config PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
