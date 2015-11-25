@@ -17,7 +17,7 @@ External::External(ClingWrapper *clingWrapper, std::shared_ptr<Gringo::Value> gr
 {
   this->clingWrapper = clingWrapper;
   this->gringoValue = gringoValue;
-  this->value = Gringo::Output::ExternalType::E_FREE;
+  this->value = Gringo::TruthValue::Free;
 }
 
 External::~External()
@@ -28,7 +28,7 @@ External::~External()
 void External::release()
 {
   this->clingWrapper->releaseExternal(this->gringoValue);
-  this->value = Gringo::Output::ExternalType::E_FREE;
+  this->value = Gringo::TruthValue::Free;
 }
 
 void External::assign(bool value)
@@ -37,22 +37,22 @@ void External::assign(bool value)
 
   if (value)
   {
-    this->value = Gringo::Output::ExternalType::E_TRUE;
+    this->value = Gringo::TruthValue::True;
   }
   else
   {
-    this->value = Gringo::Output::ExternalType::E_FALSE;
+    this->value = Gringo::TruthValue::False;
   }
 }
 
 bool External::isAssigned()
 {
-  return this->value != Gringo::Output::ExternalType::E_FREE;
+  return this->value != Gringo::TruthValue::Free;
 }
 
 bool External::isReleased()
 {
-  return this->value == Gringo::Output::ExternalType::E_FREE;
+  return !isAssigned();
 }
 
 Gringo::Output::ExternalType External::getValue()

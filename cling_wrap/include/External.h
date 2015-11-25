@@ -36,7 +36,7 @@ public:
   void assign(bool value);
   bool isAssigned();
   bool isReleased();
-  Gringo::Output::ExternalType getValue();
+  Gringo::TruthValue getValue();
 
 private:
   External(ClingWrapper *clingWrapper, std::shared_ptr<Gringo::Value> gringoValue);
@@ -44,7 +44,7 @@ private:
 private:
   std::shared_ptr<Gringo::Value> gringoValue;
   ClingWrapper *clingWrapper;
-  Gringo::Output::ExternalType value;
+  Gringo::TruthValue value;
 };
 
 } /* namespace supplementary */
