@@ -46,11 +46,12 @@ struct Exports {
     using element_iterator       = typename element_vec::iterator;
     using const_element_iterator = typename element_vec::const_iterator;
 
-    bool next();
+    bool nextGeneration();
     void init();
     void append(element_type &elem);
     void clear();
     void incNext();
+    void showNext();
     unsigned size() const;
     element_iterator begin();
     element_iterator end();
@@ -59,13 +60,13 @@ struct Exports {
     element_type &operator[](unsigned x);
 
     element_vec exports;
-    // TODO: explain why three counters are necessary...
-    unsigned    offset         = 0; //!< Up to which offset to include
-    unsigned    generation     = 0; //!< starting point of the current generation
-    unsigned    nextGeneration = 0; //!< starting point of the next generation
+    unsigned    generation_     = 0; //!< starting point of the current generation
+    unsigned    nextGeneration_ = 0; //!< starting point of the next generation
     //! The incOffset divides elements added at the current and previous incremental steps.
     //! It is used to only output newly inserted atoms, for projection, and classical negation.
     unsigned    incOffset      = 0;
+    //! Used to decouple symbol table generation from grounding
+    unsigned    showOffset     = 0;
 };
 
 // }}}
@@ -142,9 +143,11 @@ struct FullIndex : IndexUpdater {
 // {{{ declaration of Domain
 
 struct Domain {
-    virtual void setEnqueued(bool x) = 0;
+    virtual void init() = 0;
+    virtual void enqueue() = 0;
+    virtual bool dequeue() = 0;
     virtual bool isEnqueued() const = 0;
-    virtual bool expire() = 0;
+    virtual void nextGeneration() = 0;
     virtual ~Domain() { }
 };
 
@@ -165,27 +168,29 @@ struct AbstractDomain : Domain {
     AbstractDomain();
     AbstractDomain(AbstractDomain const &) = delete;
     AbstractDomain(AbstractDomain &&)      = delete;
-    void init();
-    virtual element_type &reserve(Value x);
     bind_index_type &add(SValVec &&bound, UTerm &&repr);
     full_index_type &add(UTerm &&repr, unsigned imported);
-    element_type *lookup(Term const &repr, RECNAF naf);
-    element_type *lookup(Term const &repr, BinderType type);
+    element_type *lookup(Term const &repr, RECNAF naf, bool &undefined);
+    element_type *lookup(Term const &repr, BinderType type, bool &undefined);
     bool check(Term const &repr, unsigned &imported);
     void clear();
-    virtual void mark() = 0;
-    virtual void unmark() = 0;
-    virtual void setEnqueued(bool x) { enqueued = x; }
-    virtual bool isEnqueued() const  { return enqueued; }
-    virtual bool expire()            { return exports.next(); }
-    virtual void doClear()           { }
+    virtual void init();
+    virtual element_type &reserve(Value x);
+    virtual void enqueue() { enqueued = 2; }
+    virtual bool dequeue() { 
+        --enqueued;
+        assert(0 <= enqueued && enqueued <= 2);
+        return enqueued;
+    }
+    virtual bool isEnqueued() const     { return enqueued; }
+    virtual void nextGeneration() { exports.nextGeneration(); }
     virtual ~AbstractDomain();
 
     bind_index_set indices;
     full_index_set fullIndices;
     element_map    domain;
     exports_type   exports;
-    bool           enqueued = false;
+    int            enqueued = 0;
 };
 
 // }}}
@@ -203,9 +208,13 @@ struct AtomState {
     bool fact(bool recursive) const;
     void setFact(bool x);
     bool defined() const;
-     unsigned generation() const;
+    unsigned generation() const;
     void generation(unsigned x);
     bool isFalse() const;
+    bool isExternal() const { return _generation < 0; }
+    void setExternal(bool x) { 
+        if (x != isExternal()) { _generation = -_generation; }
+    }
     static std::pair<Value const, AtomState> &ignore();
 
 private:
@@ -218,23 +227,20 @@ private:
     //! The generation of the atom. This value is used by indices to determine
     //! what is new and old, respectively. Value zero is used to encode
     //! reserved atoms, which will not be used for matching in indices.
-    unsigned _generation;
+    //! 0     - must not happen
+    //! > 0   - non-external
+    //! < 0   - external
+    //! 1, -1 - no generation yet
+    int _generation;
 };
 
 // }}}
 // {{{ declaration of PredicateDomain
 
 struct PredicateDomain : AbstractDomain<AtomState> {
-    using marks_queue = std::deque<unsigned>;
-
     std::tuple<element_type*, bool, bool> insert(Value x, bool fact);
     void insert(element_type &x);
-    virtual void doClear();
-    virtual void mark();
-    virtual void unmark();
     virtual ~PredicateDomain();
-    
-    marks_queue marks;
 };
 using PredDomMap = unique_list<std::pair<FWSignature, PredicateDomain>, extract_first<FWSignature>>;
 
@@ -262,17 +268,21 @@ inline std::ostream &operator<<(std::ostream &out, BinderType x) {
 // {{{ definition of Exports
 
 template <class Element>
-bool Exports<Element>::next() { 
-    generation     = nextGeneration;
-    nextGeneration = offset;
-    return generation != nextGeneration;
+bool Exports<Element>::nextGeneration() { 
+    generation_     = nextGeneration_;
+    nextGeneration_ = exports.size();
+    return generation_ != nextGeneration_;
 }
 template <class Element>
 void Exports<Element>::incNext() {
     incOffset = exports.size();
 }
 template <class Element>
-void Exports<Element>::init() { generation = 0; }
+void Exports<Element>::showNext() {
+    showOffset = exports.size();
+}
+template <class Element>
+void Exports<Element>::init() { generation_ = 0; }
 template <class Element>
 void Exports<Element>::append(element_type &elem) { exports.emplace_back(elem); }
 template <class Element>
@@ -290,10 +300,10 @@ typename Exports<Element>::element_type &Exports<Element>::operator[](unsigned x
 template <class Element>
 void Exports<Element>::clear() { 
     exports.clear();
-    offset         = 0;
-    generation     = 0;
-    nextGeneration = 0;
+    generation_     = 0;
+    nextGeneration_ = 0;
     incOffset      = 0;
+    showOffset     = 0;
 }
 
 // }}}
@@ -315,7 +325,7 @@ BindIndex<Element>::BindIndex(exports_type &import, SValVec &&bound, UTerm &&rep
 template <class Element>
 bool BindIndex<Element>::update() {
     bool updated = false;
-    for (auto it(import.begin() + imported), ie(import.begin() + import.offset); it != ie; ++it) {
+    for (auto it(import.begin() + imported), ie(import.end()); it < ie; ++it) {
         if (repr->match(it->get().first)) {
             boundVals.clear();
             for (auto &y : bound) { boundVals.emplace_back(*y); }
@@ -323,7 +333,7 @@ bool BindIndex<Element>::update() {
             updated = true;
         }
     }
-    imported = import.offset;
+    imported = std::max(imported, import.size());
     return updated;
 }
 template <class Element>
@@ -334,8 +344,8 @@ typename BindIndex<Element>::element_range BindIndex<Element>::lookup(SValVec co
     if (it != data.end()) {
         auto cmp = [](element_type const &a, unsigned gen) { return a.second.generation() < gen; };
         switch (type) {
-            case BinderType::NEW: { return { std::lower_bound(it->second.begin(), it->second.end(), import.generation, cmp), it->second.end() }; }
-            case BinderType::OLD: { return { it->second.begin(), std::lower_bound(it->second.begin(), it->second.end(), import.generation, cmp) }; }
+            case BinderType::NEW: { return { std::lower_bound(it->second.begin(), it->second.end(), import.generation_, cmp), it->second.end() }; }
+            case BinderType::OLD: { return { it->second.begin(), std::lower_bound(it->second.begin(), it->second.end(), import.generation_, cmp) }; }
             case BinderType::ALL: { return { it->second.begin(), it->second.end() }; }
         }
     }
@@ -377,19 +387,19 @@ typename FullIndex<Element>::element_range FullIndex<Element>::lookup(BinderType
     switch (type) {
         case BinderType::ALL: {
             auto range(index.begin());
-            auto end(exports.nextGeneration);
+            auto end(exports.nextGeneration_);
             return { range, range != index.end() ? range->first : end, end };
         }
         case BinderType::NEW: {
             auto cmp([](typename interval_vec::value_type const &x, unsigned y) { return x.second < y;  });
-            auto current(exports.generation);
+            auto current(exports.generation_);
             auto range(std::lower_bound(index.begin(), index.end(), current, cmp));
-            auto end(exports.nextGeneration);
+            auto end(exports.nextGeneration_);
             return { range, range != index.end() ? std::max(range->first, current) : end, end };
         }
         case BinderType::OLD: {
             auto range(index.begin());
-            auto end(exports.generation);
+            auto end(exports.generation_);
             return { range, range != index.end() ? range->first : end, end };
         }
     }
@@ -398,7 +408,7 @@ typename FullIndex<Element>::element_range FullIndex<Element>::lookup(BinderType
 template <class Element>
 bool FullIndex<Element>::update() {
     bool ret = false;
-    for (auto it(exports.begin() + imported), ie(exports.begin() + exports.offset); it != ie; ++it, ++imported) {
+    for (auto it(exports.begin() + imported), ie(exports.end()); it < ie; ++it, ++imported) {
         if (repr->match(it->get().first)) {
             if (!index.empty() && index.back().second == imported) { index.back().second++; }
             else { index.emplace_back(imported, imported+1); }
@@ -429,8 +439,6 @@ template <class Element>
 typename AbstractDomain<Element>::bind_index_type &AbstractDomain<Element>::add(SValVec &&bound, UTerm &&repr) {
     auto ret(indices.emplace(exports, std::move(bound), std::move(repr)));
     auto &idx = const_cast<bind_index_type&>(*ret.first);
-    mark();
-    unmark();
     idx.update();
     return idx;
 }
@@ -438,48 +446,46 @@ template <class Element>
 typename AbstractDomain<Element>::full_index_type &AbstractDomain<Element>::add(UTerm &&repr, unsigned imported) {
     auto ret(fullIndices.emplace(exports, std::move(repr), imported));
     auto &idx = const_cast<full_index_type&>(*ret.first);
-    mark();
-    unmark();
     idx.update();
     return idx;
 }
 template <class Element>
-typename AbstractDomain<Element>::element_type *AbstractDomain<Element>::lookup(Term const &repr, RECNAF naf) {
+typename AbstractDomain<Element>::element_type *AbstractDomain<Element>::lookup(Term const &repr, RECNAF naf, bool &undefined) {
     switch (naf) {
         case RECNAF::POS: {
             // Note: intended for non-recursive case only
-            auto it = domain.find(repr.eval());
+            auto it = domain.find(repr.eval(undefined));
             return it != domain.end() && it->second.defined() ? &*it : nullptr;
         }
         case RECNAF::NOT: {
-            auto it = domain.find(repr.eval());
+            auto it = domain.find(repr.eval(undefined));
             if (it != domain.end()) { return !it->second.fact(false) ? &*it : nullptr; }
             else                    { return &Element::ignore(); }
         }
         case RECNAF::RECNOT: {
-            auto result = &reserve(repr.eval());
+            auto result = &reserve(repr.eval(undefined));
             return !result->second.fact(true) ? result : nullptr;
         }
         case RECNAF::NOTNOT: {
             // Note: intended for recursive case only
-            return &reserve(repr.eval());
+            return &reserve(repr.eval(undefined));
         }
     }
     return nullptr;
 }
 template <class Element>
-typename AbstractDomain<Element>::element_type *AbstractDomain<Element>::lookup(Term const &repr, BinderType type) {
-        // Note: intended for recursive case only
-    auto it = domain.find(repr.eval());
+typename AbstractDomain<Element>::element_type *AbstractDomain<Element>::lookup(Term const &repr, BinderType type, bool &undefined) {
+    // Note: intended for recursive case only
+    auto it = domain.find(repr.eval(undefined));
     if (it != domain.end() && it->second.defined()) {
         auto result = &*it;
         switch (type) {
-            case BinderType::OLD: { return it->second.generation() < exports.generation     ? result : nullptr; }
-            case BinderType::ALL: { return it->second.generation() < exports.nextGeneration ? result : nullptr; }
+            case BinderType::OLD: { return it->second.generation() < exports.generation_     ? result : nullptr; }
+            case BinderType::ALL: { return it->second.generation() < exports.nextGeneration_ ? result : nullptr; }
             case BinderType::NEW: {
                 return
-                    it->second.generation() >= exports.generation &&
-                    it->second.generation() <  exports.nextGeneration 
+                    it->second.generation() >= exports.generation_ &&
+                    it->second.generation() <  exports.nextGeneration_
                     ? result : nullptr;
             }
         }
@@ -490,13 +496,13 @@ typename AbstractDomain<Element>::element_type *AbstractDomain<Element>::lookup(
 template <class Element>
 bool AbstractDomain<Element>::check(Term const &repr, unsigned &imported) {
     bool ret = false;
-    for (auto it(exports.begin() + imported), ie(exports.begin() + exports.offset); it != ie; ++it) {
+    for (auto it(exports.begin() + imported), ie(exports.end()); it < ie; ++it) {
         if (repr.match(it->get().first)) { 
             ret = true;
             break;
         }
     }
-    imported = exports.offset;
+    imported = std::max(imported, exports.size());
     return ret;
 }
 template <class Element>
@@ -515,36 +521,30 @@ AbstractDomain<Element>::~AbstractDomain() { }
 
 inline AtomState::AtomState(std::nullptr_t) 
     : _uid(0)
-    , _generation(0) { }
+    , _generation(1) { }
 inline AtomState::AtomState() 
     : _uid(1)
-    , _generation(0) { }
+    , _generation(1) { }
 inline AtomState::AtomState(bool fact, unsigned generation)
     : _uid(!fact ? 1 : -1)
-    , _generation(generation + 1) { }
+    , _generation(generation + 2) { }
 inline unsigned AtomState::uid() const        { assert(_uid != 0); return std::abs(_uid) - 1; }
 inline bool AtomState::hasUid() const         { assert(_uid != 0); return _uid > 1 || _uid < -1; }
 inline void AtomState::uid(unsigned x)        { assert(_uid != 0 && x > 0); _uid = _uid > 0 ? x+1 : -x-1; }
 inline bool AtomState::fact(bool) const       { return _uid < 0; }
 inline void AtomState::setFact(bool x)        { if (x != fact(false)) { _uid = -_uid; } }
-inline bool AtomState::defined() const        { return _generation > 0; }
-inline unsigned AtomState::generation() const { return _generation - 1; }
-inline void AtomState::generation(unsigned x) { _generation = x + 1; }
+inline bool AtomState::defined() const        { return std::abs(_generation) > 1; }
+inline unsigned AtomState::generation() const { return std::abs(_generation) - 2; }
+inline void AtomState::generation(unsigned x) { _generation = x + 2; }
 inline bool AtomState::isFalse() const        { return _uid == 0; }
 inline std::pair<Value const,AtomState> &AtomState::ignore() {
-    static AbstractDomain<AtomState>::element_type x{{Value("#false")}, {nullptr}};
+    static AbstractDomain<AtomState>::element_type x{{Value::createId("#false")}, {nullptr}};
     return x;
 }
 
 // }}}
 // {{{ definition of PredicateDomain
 
-inline void PredicateDomain::mark() { marks.push_back(exports.size()); }
-inline void PredicateDomain::unmark() {
-    assert(!marks.empty());
-    exports.offset = marks.front();
-    marks.pop_front();
-}
 inline std::tuple<PredicateDomain::element_type*, bool, bool> PredicateDomain::insert(Value x, bool fact) {
     auto ret(domain.emplace(x, AtomState{fact, exports.size()}));
     bool wasfact = false;
@@ -555,8 +555,8 @@ inline std::tuple<PredicateDomain::element_type*, bool, bool> PredicateDomain::i
             ret.second = true;
             exports.append(*ret.first);
         }
+        wasfact = ret.first->second.fact(false);
         if (fact) { 
-            wasfact = ret.first->second.fact(false);
             ret.first->second.setFact(true);
         }
     }
@@ -567,9 +567,6 @@ inline void PredicateDomain::insert(element_type &x) {
         x.second.generation(exports.size());
         exports.append(x);
     }
-}
-inline void PredicateDomain::doClear() {
-    marks.clear();
 }
 inline PredicateDomain::~PredicateDomain() { }
 

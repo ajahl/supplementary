@@ -37,8 +37,8 @@ struct CSPMulTerm {
     void collect(VarTermSet &vars) const;
     void replace(Defines &x);
     bool operator==(CSPMulTerm const &x) const;
-    void simplify(Term::DotsMap &dots, Term::ScriptMap &scripts, unsigned &auxNum);
-    void rewriteArithmetics(Term::ArithmeticsMap &arith, unsigned &auxNum);
+    bool simplify(SimplifyState &state);
+    void rewriteArithmetics(Term::ArithmeticsMap &arith, AuxGen &auxGen);
     size_t hash() const;
     bool hasPool() const;
     std::vector<CSPMulTerm> unpool() const;
@@ -69,16 +69,17 @@ struct CSPAddTerm {
     CSPAddTerm(Terms &&terms);
     CSPAddTerm &operator=(CSPAddTerm &&x);
     void append(CSPMulTerm &&x);
-    void simplify(Term::DotsMap &dots, Term::ScriptMap &scripts, unsigned &auxNum);
+    bool simplify(SimplifyState &state);
     void collect(VarTermBoundVec &vars) const;
     void collect(VarTermSet &vars) const;
     void replace(Defines &x);
     bool operator==(CSPAddTerm const &x) const;
-    void rewriteArithmetics(Term::ArithmeticsMap &arith, unsigned &auxNum);
+    void rewriteArithmetics(Term::ArithmeticsMap &arith, AuxGen &auxGen);
     std::vector<CSPAddTerm> unpool() const;
     size_t hash() const;
     bool hasPool() const;
     void toGround(CSPGroundLit &ground, bool invert) const;
+    bool checkEval() const;
     ~CSPAddTerm();
 
     Terms terms;
@@ -102,8 +103,8 @@ struct CSPRelTerm {
     void collect(VarTermSet &vars) const;
     void replace(Defines &x);
     bool operator==(CSPRelTerm const &x) const;
-    void simplify(Term::DotsMap &dots, Term::ScriptMap &scripts, unsigned &auxNum);
-    void rewriteArithmetics(Term::ArithmeticsMap &arith, unsigned &auxNum);
+    bool simplify(SimplifyState &state);
+    void rewriteArithmetics(Term::ArithmeticsMap &arith, AuxGen &auxGen);
     size_t hash() const;
     bool hasPool() const;
     std::vector<CSPRelTerm> unpool() const;

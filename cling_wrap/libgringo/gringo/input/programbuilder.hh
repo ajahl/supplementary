@@ -52,13 +52,11 @@ namespace Output {
 
 struct OutputBase;
 
-} // namespace Output
-
-} // namespace Gringo
+} } // namespace Output Gringo
 
 namespace Gringo { namespace Input {
 
-// {{{ declaration of unique ids of program elements
+// {{{1 declaration of unique ids of program elements
 
 enum IdVecUid         : unsigned { };
 enum CSPAddTermUid    : unsigned { };
@@ -76,12 +74,12 @@ enum HdLitUid         : unsigned { };
 enum BdLitVecUid      : unsigned { };
 enum BoundVecUid      : unsigned { };
 enum CSPElemVecUid    : unsigned { };
-// }}}
-// {{{ declaration of INongroundProgramBuilder
+
+// {{{1 declaration of INongroundProgramBuilder
 
 class INongroundProgramBuilder {
 public:
-    // {{{ terms
+    // {{{2 terms
     virtual TermUid term(Location const &loc, Value val) = 0;                                // constant
     virtual TermUid term(Location const &loc, FWString name) = 0;                            // variable
     virtual TermUid term(Location const &loc, UnOp op, TermUid a) = 0;                       // unary operation
@@ -89,8 +87,9 @@ public:
     virtual TermUid term(Location const &loc, BinOp op, TermUid a, TermUid b) = 0;           // binary operation
     virtual TermUid term(Location const &loc, TermUid a, TermUid b) = 0;                     // dots
     virtual TermUid term(Location const &loc, FWString name, TermVecVecUid b, bool lua) = 0; // function or lua function
-    // }}}
-    // {{{ csp
+    virtual TermUid term(Location const &loc, TermVecUid args, bool forceTuple) = 0;         // a tuple term (or simply a term)
+    virtual TermUid pool(Location const &loc, TermVecUid args) = 0;                          // a pool term
+    // {{{2 csp
     virtual CSPMulTermUid cspmulterm(Location const &loc, TermUid coe, TermUid var) = 0;
     virtual CSPMulTermUid cspmulterm(Location const &loc, TermUid coe) = 0;
     virtual CSPAddTermUid cspaddterm(Location const &loc, CSPAddTermUid a, CSPMulTermUid b, bool add) = 0;
@@ -98,79 +97,65 @@ public:
     virtual LitUid csplit(CSPLitUid a) = 0;
     virtual CSPLitUid csplit(Location const &loc, CSPLitUid a, Relation rel, CSPAddTermUid b) = 0;
     virtual CSPLitUid csplit(Location const &loc, CSPAddTermUid a, Relation rel, CSPAddTermUid b) = 0;
-    // }}}
-    // {{{ id vectors
+    // {{{2 id vectors
     virtual IdVecUid idvec() = 0;
     virtual IdVecUid idvec(IdVecUid uid, Location const &loc, FWString id) = 0;
-    // }}}
-    // {{{ term vectors
+    // {{{2 term vectors
     virtual TermVecUid termvec() = 0;
     virtual TermVecUid termvec(TermVecUid uid, TermUid term) = 0;
-    // }}}
-    // {{{ term vector vectors
+    // {{{2 term vector vectors
     virtual TermVecVecUid termvecvec() = 0;
     virtual TermVecVecUid termvecvec(TermVecVecUid uid, TermVecUid termvecUid) = 0;
-    // }}}
-    // {{{ literals
+    // {{{2 literals
     virtual LitUid boollit(Location const &loc, bool type) = 0;
     virtual LitUid predlit(Location const &loc, NAF naf, bool neg, FWString name, TermVecVecUid argvecvecUid) = 0;
     virtual LitUid rellit(Location const &loc, Relation rel, TermUid termUidLeft, TermUid termUidRight) = 0;
-    // }}}
-    // {{{ literal vectors
+    // {{{2 literal vectors
     virtual LitVecUid litvec() = 0;
     virtual LitVecUid litvec(LitVecUid uid, LitUid literalUid) = 0;
-    // }}}
-    // {{{ conditional literals
+    // {{{2 conditional literals
     virtual CondLitVecUid condlitvec() = 0;
     virtual CondLitVecUid condlitvec(CondLitVecUid uid, LitUid lit, LitVecUid litvec) = 0;
-    // }}}
-    // {{{ body aggregate elements
+    // {{{2 body aggregate elements
     virtual BdAggrElemVecUid bodyaggrelemvec() = 0;
     virtual BdAggrElemVecUid bodyaggrelemvec(BdAggrElemVecUid uid, TermVecUid termvec, LitVecUid litvec) = 0;
-    // }}}
-    // {{{ head aggregate elements
+    // {{{2 head aggregate elements
     virtual HdAggrElemVecUid headaggrelemvec() = 0;
     virtual HdAggrElemVecUid headaggrelemvec(HdAggrElemVecUid uid, TermVecUid termvec, LitUid lit, LitVecUid litvec) = 0;
-    // }}}
-    // {{{ bounds
+    // {{{2 bounds
     virtual BoundVecUid boundvec() = 0;
     virtual BoundVecUid boundvec(BoundVecUid uid, Relation rel, TermUid term) = 0;
-    // }}}
-    // {{{ heads
+    // {{{2 heads
     virtual HdLitUid headlit(LitUid lit) = 0;
     virtual HdLitUid headaggr(Location const &loc, AggregateFunction fun, BoundVecUid bounds, HdAggrElemVecUid headaggrelemvec) = 0;
     virtual HdLitUid headaggr(Location const &loc, AggregateFunction fun, BoundVecUid bounds, CondLitVecUid headaggrelemvec) = 0;
     virtual HdLitUid disjunction(Location const &loc, CondLitVecUid condlitvec) = 0;
-    // }}}
-    // {{{ bodies
+    // {{{2 bodies
     virtual BdLitVecUid body() = 0;
     virtual BdLitVecUid bodylit(BdLitVecUid body, LitUid bodylit) = 0;
     virtual BdLitVecUid bodyaggr(BdLitVecUid body, Location const &loc, NAF naf, AggregateFunction fun, BoundVecUid bounds, BdAggrElemVecUid bodyaggrelemvec) = 0;
     virtual BdLitVecUid bodyaggr(BdLitVecUid body, Location const &loc, NAF naf, AggregateFunction fun, BoundVecUid bounds, CondLitVecUid bodyaggrelemvec) = 0;
     virtual BdLitVecUid conjunction(BdLitVecUid body, Location const &loc, LitUid head, LitVecUid litvec) = 0;
     virtual BdLitVecUid disjoint(BdLitVecUid body, Location const &loc, NAF naf, CSPElemVecUid elem) = 0;
-    // }}}
-    // {{{ csp constraint elements
+    // {{{2 csp constraint elements
     virtual CSPElemVecUid cspelemvec() = 0;
     virtual CSPElemVecUid cspelemvec(CSPElemVecUid uid, Location const &loc, TermVecUid termvec, CSPAddTermUid addterm, LitVecUid litvec) = 0;
-    // }}}
-    // {{{ statements
+    // {{{2 statements
     virtual void rule(Location const &loc, HdLitUid head) = 0;
     virtual void rule(Location const &loc, HdLitUid head, BdLitVecUid body) = 0;
     virtual void define(Location const &loc, FWString name, TermUid value, bool defaultDef) = 0;
     virtual void optimize(Location const &loc, TermUid weight, TermUid priority, TermVecUid cond, BdLitVecUid body) = 0;
-    virtual void showsig(Location const &loc, FWString name, unsigned arity, bool csp) = 0;
+    virtual void showsig(Location const &loc, FWSignature, bool csp) = 0;
     virtual void show(Location const &loc, TermUid t, BdLitVecUid body, bool csp) = 0;
     virtual void python(Location const &loc, FWString code) = 0;
     virtual void lua(Location const &loc, FWString code) = 0;
     virtual void block(Location const &loc, FWString name, IdVecUid args) = 0;
     virtual void external(Location const &loc, LitUid head, BdLitVecUid body) = 0;
-    // }}}
+    // }}}2
     virtual ~INongroundProgramBuilder() { }
 };
 
-// }}}
-// {{{ declaration of NongroundProgramBuilder
+// {{{1 declaration of NongroundProgramBuilder
 
 using UCSPLit = std::unique_ptr<CSPLiteral>;
 using ULit = std::unique_ptr<Literal>;
@@ -191,8 +176,8 @@ using IdVec = std::vector<std::pair<Location, FWString>>;
 
 class NongroundProgramBuilder : public INongroundProgramBuilder {
 public:
-    NongroundProgramBuilder(Scripts &scripts, Program &prg, Output::OutputBase &out, Defines &defs);
-    // {{{ terms
+    NongroundProgramBuilder(Scripts &scripts, Program &prg, Output::OutputBase &out, Defines &defs, bool rewriteMinimize = false);
+    // {{{2 terms
     virtual TermUid term(Location const &loc, Value val);                                // constant
     virtual TermUid term(Location const &loc, FWString name);                            // variable
     virtual TermUid term(Location const &loc, UnOp op, TermUid a);                       // unary operation
@@ -200,16 +185,16 @@ public:
     virtual TermUid term(Location const &loc, BinOp op, TermUid a, TermUid b);           // binary operation
     virtual TermUid term(Location const &loc, TermUid a, TermUid b);                     // assignment
     virtual TermUid term(Location const &loc, FWString name, TermVecVecUid b, bool lua); // function or lua function
-    // }}}
-    // {{{ term vectors
+    virtual TermUid term(Location const &loc, TermVecUid args, bool forceTuple);         // a tuple term (or simply a term)
+    virtual TermUid pool(Location const &loc, TermVecUid args);                          // a pool term
+
+    // {{{2 term vectors
     virtual TermVecUid termvec();
     virtual TermVecUid termvec(TermVecUid uid, TermUid term);
-    // }}}
-    // {{{ id vectors
+    // {{{2 id vectors
     virtual IdVecUid idvec();
     virtual IdVecUid idvec(IdVecUid uid, Location const &loc, FWString id);
-    // }}}
-    // {{{ csp
+    // {{{2 csp
     virtual CSPMulTermUid cspmulterm(Location const &loc, TermUid coe, TermUid var);
     virtual CSPMulTermUid cspmulterm(Location const &loc, TermUid coe);
     virtual CSPAddTermUid cspaddterm(Location const &loc, CSPAddTermUid a, CSPMulTermUid b, bool add);
@@ -217,66 +202,55 @@ public:
     virtual LitUid csplit(CSPLitUid a);
     virtual CSPLitUid csplit(Location const &loc, CSPLitUid a, Relation rel, CSPAddTermUid b);
     virtual CSPLitUid csplit(Location const &loc, CSPAddTermUid a, Relation rel, CSPAddTermUid b);
-    // }}}
-    // {{{ term vector vectors
+    // {{{2 term vector vectors
     virtual TermVecVecUid termvecvec();
     virtual TermVecVecUid termvecvec(TermVecVecUid uid, TermVecUid termvecUid);
-    // }}}
-    // {{{ literals
+    // {{{2 literals
     virtual LitUid boollit(Location const &loc, bool type);
     virtual LitUid predlit(Location const &loc, NAF naf, bool neg, FWString name, TermVecVecUid argvecvecUid);
     virtual LitUid rellit(Location const &loc, Relation rel, TermUid termUidLeft, TermUid termUidRight);
-    // }}}
-    // {{{ literal vectors
+    // {{{2 literal vectors
     virtual LitVecUid litvec();
     virtual LitVecUid litvec(LitVecUid uid, LitUid literalUid);
-    // }}}
-    // {{{ conditional literal vectors
+    // {{{2 conditional literal vectors
     virtual CondLitVecUid condlitvec();
     virtual CondLitVecUid condlitvec(CondLitVecUid uid, LitUid lit, LitVecUid litvec);
-    // }}}
-    // {{{ body aggregate elements
+    // {{{2 body aggregate elements
     virtual BdAggrElemVecUid bodyaggrelemvec();
     virtual BdAggrElemVecUid bodyaggrelemvec(BdAggrElemVecUid uid, TermVecUid termvec, LitVecUid litvec);
-    // }}}
-    // {{{ head aggregate elements
+    // {{{2 head aggregate elements
     virtual HdAggrElemVecUid headaggrelemvec();
     virtual HdAggrElemVecUid headaggrelemvec(HdAggrElemVecUid uid, TermVecUid termvec, LitUid lit, LitVecUid litvec);
-    // }}}
-    // {{{ bounds
+    // {{{2 bounds
     virtual BoundVecUid boundvec();
     virtual BoundVecUid boundvec(BoundVecUid uid, Relation rel, TermUid term);
-    // }}}
-    // {{{ heads
+    // {{{2 heads
     virtual HdLitUid headlit(LitUid lit);
     virtual HdLitUid headaggr(Location const &loc, AggregateFunction fun, BoundVecUid bounds, HdAggrElemVecUid headaggrelemvec);
     virtual HdLitUid headaggr(Location const &loc, AggregateFunction fun, BoundVecUid bounds, CondLitVecUid headaggrelemvec);
     virtual HdLitUid disjunction(Location const &loc, CondLitVecUid condlitvec);
-    // }}}
-    // {{{ bodies
+    // {{{2 bodies
     virtual BdLitVecUid body();
     virtual BdLitVecUid bodylit(BdLitVecUid body, LitUid bodylit);
     virtual BdLitVecUid bodyaggr(BdLitVecUid body, Location const &loc, NAF naf, AggregateFunction fun, BoundVecUid bounds, BdAggrElemVecUid bodyaggrelemvec);
     virtual BdLitVecUid bodyaggr(BdLitVecUid body, Location const &loc, NAF naf, AggregateFunction fun, BoundVecUid bounds, CondLitVecUid bodyaggrelemvec);
     virtual BdLitVecUid conjunction(BdLitVecUid body, Location const &loc, LitUid head, LitVecUid litvec);
     virtual BdLitVecUid disjoint(BdLitVecUid body, Location const &loc, NAF naf, CSPElemVecUid elem);
-    // }}}
-    // {{{ csp constraint elements
+    // {{{2 csp constraint elements
     virtual CSPElemVecUid cspelemvec();
     virtual CSPElemVecUid cspelemvec(CSPElemVecUid uid, Location const &loc, TermVecUid termvec, CSPAddTermUid addterm, LitVecUid litvec);
-    // }}}
-    // {{{ statements
+    // {{{2 statements
     virtual void rule(Location const &loc, HdLitUid head);
     virtual void rule(Location const &loc, HdLitUid head, BdLitVecUid body);
     virtual void define(Location const &loc, FWString name, TermUid value, bool defaultDef);
     virtual void optimize(Location const &loc, TermUid weight, TermUid priority, TermVecUid cond, BdLitVecUid body);
-    virtual void showsig(Location const &loc, FWString name, unsigned arity, bool csp);
+    virtual void showsig(Location const &loc, FWSignature sig, bool csp);
     virtual void show(Location const &loc, TermUid t, BdLitVecUid body, bool csp);
     virtual void python(Location const &loc, FWString code);
     virtual void lua(Location const &loc, FWString code);
     virtual void block(Location const &loc, FWString name, IdVecUid args);
     virtual void external(Location const &loc, LitUid head, BdLitVecUid body);
-    // }}}
+    // }}}2
     virtual ~NongroundProgramBuilder();
 
 private:
@@ -320,9 +294,10 @@ private:
     Program            &prg_;
     Output::OutputBase &out;
     Defines            &defs_;
+    bool                rewriteMinimize_;
 };
 
-// }}}
+// }}}1
 
 } } // namespace Input Gringo
 

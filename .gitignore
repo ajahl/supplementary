@@ -1,5 +1,12 @@
+cling_wrap/libgringo/src/input/groundtermlexer.hh
 cling_wrap/libgringo/src/input/nongroundlexer.hh
 cling_wrap/libgringo/src/input/nongroundgrammar/grammar.cc
 cling_wrap/libgringo/src/input/nongroundgrammar/grammar.hh
 cling_wrap/libgringo/src/input/nongroundgrammar/grammar.out
 cling_wrap/libgringo/src/input/nongroundgrammar/stack.hh
+cling_wrap/libgringo/src/input/groundtermgrammar/grammar.cc
+cling_wrap/libgringo/src/input/groundtermgrammar/grammar.hh
+cling_wrap/libgringo/src/input/groundtermgrammar/grammar.out
+cling_wrap/libgringo/src/input/groundtermgrammar/location.hh
+cling_wrap/libgringo/src/input/groundtermgrammar/position.hh
+cling_wrap/libgringo/src/input/groundtermgrammar/stack.hh

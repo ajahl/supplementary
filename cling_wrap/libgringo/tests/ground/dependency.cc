@@ -109,7 +109,7 @@ struct TestBodyOccurrence : BodyOccurrence<S> {
         }
     }
     virtual DefinedBy &definedBy() { return defs; }
-    virtual void checkDefined(LocSet &, SigSet const &) const { }
+    virtual void checkDefined(LocSet &, SigSet const &, UndefVec &) const { }
     virtual ~TestBodyOccurrence() { }
     unsigned num;
     UTerm term;
@@ -156,18 +156,18 @@ void TestDependency::tearDown() {
 
 void TestDependency::test_match() {
     TestLookup l;
-    l.add(fun("f", val(2)));
-    CPPUNIT_ASSERT_EQUAL(S("{f(2)}"), l.match(V("f", { V(2) })));
+    l.add(fun("f", val(NUM(2))));
+    CPPUNIT_ASSERT_EQUAL(S("{f(2)}"), l.match(V::createFun("f", { NUM(2) })));
     l.add(fun("f", var("X")));
-    CPPUNIT_ASSERT_EQUAL(S("{f(Y0)}"), l.match(V("f", { V(1) })));
-    CPPUNIT_ASSERT_EQUAL(S("{}"), l.match(V("g", { V(1) })));
+    CPPUNIT_ASSERT_EQUAL(S("{f(Y0)}"), l.match(V::createFun("f", { NUM(1) })));
+    CPPUNIT_ASSERT_EQUAL(S("{}"), l.match(V::createFun("g", { NUM(1) })));
     l.add(fun("f", var("X"), var("X")));
     l.add(fun("f", var("X"), var("Y")));
-    CPPUNIT_ASSERT_EQUAL(S("{f(Y0,Y0),f(Y0,Y1)}"), l.match(V("f", { V(1), V(1) })));
-    CPPUNIT_ASSERT_EQUAL(S("{f(Y0,Y1)}"), l.match(V("f", { V(1), V(2) })));
+    CPPUNIT_ASSERT_EQUAL(S("{f(Y0,Y0),f(Y0,Y1)}"), l.match(V::createFun("f", { NUM(1), NUM(1) })));
+    CPPUNIT_ASSERT_EQUAL(S("{f(Y0,Y1)}"), l.match(V::createFun("f", { NUM(1), NUM(2) })));
     l.add(fun("g", lin("X", 3, 7)));
-    CPPUNIT_ASSERT_EQUAL(S("{}"), l.match(V("g", { V(2) })));
-    CPPUNIT_ASSERT_EQUAL(S("{g((3*Y0+7))}"), l.match(V("g", { V(10) })));
+    CPPUNIT_ASSERT_EQUAL(S("{}"), l.match(V::createFun("g", { NUM(2) })));
+    CPPUNIT_ASSERT_EQUAL(S("{g((3*Y0+7))}"), l.match(V::createFun("g", { NUM(10) })));
 }
 
 void TestDependency::test_unify() {
@@ -179,66 +179,66 @@ void TestDependency::test_unify() {
     l.add(fun("f", var("X"), var("X")));
     CPPUNIT_ASSERT_EQUAL(S("{}"), l.unify(fun("f", var("A"), fun("f", var("A")))));
     CPPUNIT_ASSERT_EQUAL(S("{f(Y0,Y0)}"), l.unify(fun("f", var("A"), fun("f", var("B")))));
-    l.add(fun("f", val(V("g", { V(1) })), var("X")));
-    CPPUNIT_ASSERT_EQUAL(S("{f(Y0,Y0),f(g(1),Y0)}"), l.unify(fun("f", var("A"), val(V("g", { V(2) })))));
+    l.add(fun("f", val(V::createFun("g", { NUM(1) })), var("X")));
+    CPPUNIT_ASSERT_EQUAL(S("{f(Y0,Y0),f(g(1),Y0)}"), l.unify(fun("f", var("A"), val(V::createFun("g", { NUM(2) })))));
 }
 
 void TestDependency::test_dep1() {
     TestDep dep;
     auto &x(dep.add("x.", true));
-    dep.provides(x, val("x"));
+    dep.provides(x, val(ID("x")));
     auto &y(dep.add("a:-b@1,x@1,y@1.", true));
-    dep.provides(y, val("a"));
-    dep.depends(y, 1, val("b"));
-    dep.depends(y, 1, val("x"));
-    dep.depends(y, 1, val("y"));
+    dep.provides(y, val(ID("a")));
+    dep.depends(y, 1, val(ID("b")));
+    dep.depends(y, 1, val(ID("x")));
+    dep.depends(y, 1, val(ID("y")));
     auto &z(dep.add("b:-a@1.", true));
-    dep.provides(z, val("b"));
-    dep.depends(z, 1, val("a"));
+    dep.provides(z, val(ID("b")));
+    dep.depends(z, 1, val(ID("a")));
     auto &u(dep.add("c:-a@2,b@2.", true));
-    dep.provides(u, val("c"));
-    dep.depends(u, 2, val("a"));
-    dep.depends(u, 2, val("b"));
+    dep.provides(u, val(ID("c")));
+    dep.depends(u, 2, val(ID("a")));
+    dep.depends(u, 2, val(ID("b")));
 	CPPUNIT_ASSERT_EQUAL(S("([([x.],1),([a:-b@1,x@1,y@1.,b:-a@1.],1),([c:-a@2,b@2.],1)],[b@2:!,a@2:!,a@1:?,y@1:!,x@1:!,b@1:?])"), dep.analyze());
 }
 
 void TestDependency::test_dep2() {
     TestDep dep;
     auto &x(dep.add("a:-~b@1.", true));
-    dep.provides(x, val("a"));
-    dep.depends(x, 1, val("b"), false);
+    dep.provides(x, val(ID("a")));
+    dep.depends(x, 1, val(ID("b")), false);
     auto &y(dep.add("b:-~a@1,a@2.", true));
-    dep.provides(y, val("b"));
-    dep.depends(y, 1, val("a"), false);
-    dep.depends(y, 2, val("a"));
+    dep.provides(y, val(ID("b")));
+    dep.depends(y, 1, val(ID("a")), false);
+    dep.depends(y, 2, val(ID("a")));
     CPPUNIT_ASSERT_EQUAL(S("([([a:-~b@1.],0),([b:-~a@1,a@2.],0)],[a@2:.,a@1:.,b@1:?])"), dep.analyze());
 }
 
 void TestDependency::test_dep3() {
     TestDep dep;
     auto &x(dep.add("{a}.", false));
-    dep.provides(x, val("a"));
+    dep.provides(x, val(ID("a")));
     auto &y(dep.add("b:-a@1.", true));
-    dep.provides(y, val("b"));
-    dep.depends(y, 1, val("a"));
+    dep.provides(y, val(ID("b")));
+    dep.depends(y, 1, val(ID("a")));
     CPPUNIT_ASSERT_EQUAL(S("([([{a}.],0),([b:-a@1.],0)],[a@1:.])"), dep.analyze());
 }
 
 void TestDependency::test_dep4() {
     TestDep dep;
     auto &x(dep.add("a:-~b@1.", true));
-    dep.provides(x, val("a"));
-    dep.depends(x, 1, val("b"), false);
+    dep.provides(x, val(ID("a")));
+    dep.depends(x, 1, val(ID("b")), false);
     auto &y(dep.add("a:-~c@1.", true));
-    dep.provides(y, val("a"));
-    dep.depends(y, 1, val("c"), false);
+    dep.provides(y, val(ID("a")));
+    dep.depends(y, 1, val(ID("c")), false);
 
     auto &b(dep.add("b:-~a@1.", true));
-    dep.provides(b, val("b"));
-    dep.depends(b, 1, val("a"));
+    dep.provides(b, val(ID("b")));
+    dep.depends(b, 1, val(ID("a")));
     auto &c(dep.add("c:-~a@2.", true));
-    dep.provides(c, val("c"));
-    dep.depends(c, 2, val("a"));
+    dep.provides(c, val(ID("c")));
+    dep.depends(c, 2, val(ID("a")));
     CPPUNIT_ASSERT_EQUAL(S("([([a:-~b@1.],0),([a:-~c@1.],0),([b:-~a@1.],0),([c:-~a@2.],0)],[a@2:.,a@1:.,c@1:?,b@1:?])"), dep.analyze());
 }
 

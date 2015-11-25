@@ -23,6 +23,7 @@
 
 #include "tests/tests.hh"
 #include "tests/term_helper.hh"
+#include "tests/gringo_module.hh"
 
 #include <functional>
 
@@ -38,6 +39,8 @@ class TestLiteral : public CppUnit::TestFixture {
     CPPUNIT_TEST_SUITE_END();
 
 public:
+    TestLiteral() : scripts(Gringo::Test::getTestModule()) { }
+
     virtual void setUp();
     virtual void tearDown();
 
@@ -87,18 +90,20 @@ std::string TestLiteral::evalRange(UTerm assign, UTerm l, UTerm r) {
     UIdx idx(lit.index(scripts, BinderType::ALL, bound));
     ValVec vals;
     idx->match();
-    while (idx->next()) { vals.emplace_back(assign->eval()); }
+    bool undefined = false;
+    while (idx->next()) { vals.emplace_back(assign->eval(undefined)); }
     return to_string(vals);
 }
 void TestLiteral::test_range() {
-    CPPUNIT_ASSERT_EQUAL(S("[]"), evalRange(var("X"), val(1), val(0)));
-    CPPUNIT_ASSERT_EQUAL(S("[1]"), evalRange(var("X"), val(1), val(1)));
-    CPPUNIT_ASSERT_EQUAL(S("[1,2]"), evalRange(var("X"), val(1), val(2)));
-    CPPUNIT_ASSERT_EQUAL(S("[]"), evalRange(var("X"), val(1), val("a")));
-    CPPUNIT_ASSERT_EQUAL(S("[]"), evalRange(val(0), val(1), val(2)));
-    CPPUNIT_ASSERT_EQUAL(S("[1]"), evalRange(val(1), val(1), val(2)));
-    CPPUNIT_ASSERT_EQUAL(S("[2]"), evalRange(val(2), val(1), val(2)));
-    CPPUNIT_ASSERT_EQUAL(S("[]"), evalRange(val(3), val(1), val(2)));
+    Gringo::Test::Messages msg;
+    CPPUNIT_ASSERT_EQUAL(S("[]"), evalRange(var("X"), val(NUM(1)), val(NUM(0))));
+    CPPUNIT_ASSERT_EQUAL(S("[1]"), evalRange(var("X"), val(NUM(1)), val(NUM(1))));
+    CPPUNIT_ASSERT_EQUAL(S("[1,2]"), evalRange(var("X"), val(NUM(1)), val(NUM(2))));
+    CPPUNIT_ASSERT_EQUAL(S("[]"), evalRange(var("X"), val(NUM(1)), val(ID("a"))));
+    CPPUNIT_ASSERT_EQUAL(S("[]"), evalRange(val(NUM(0)), val(NUM(1)), val(NUM(2))));
+    CPPUNIT_ASSERT_EQUAL(S("[1]"), evalRange(val(NUM(1)), val(NUM(1)), val(NUM(2))));
+    CPPUNIT_ASSERT_EQUAL(S("[2]"), evalRange(val(NUM(2)), val(NUM(1)), val(NUM(2))));
+    CPPUNIT_ASSERT_EQUAL(S("[]"), evalRange(val(NUM(3)), val(NUM(1)), val(NUM(2))));
 }
 
 std::string TestLiteral::evalRelation(Relation rel, UTerm l, UTerm r) {
@@ -107,24 +112,25 @@ std::string TestLiteral::evalRelation(Relation rel, UTerm l, UTerm r) {
     UIdx idx(lit.index(scripts, BinderType::ALL, bound));
     std::vector<S> vals;
     idx->match();
+    bool undefined = false;
     while (idx->next()) { 
         vals.emplace_back();
-        vals.back() += to_string(l->eval());
+        vals.back() += to_string(l->eval(undefined));
         vals.back() += to_string(rel);
-        vals.back() += to_string(r->eval());
+        vals.back() += to_string(r->eval(undefined));
     }
     return to_string(vals);
 }
 void TestLiteral::test_relation() {
-    CPPUNIT_ASSERT_EQUAL(S("[]"), evalRelation(Relation::LT, val(1), val(1)));
-    CPPUNIT_ASSERT_EQUAL(S("[1<2]"), evalRelation(Relation::LT, val(1), val(2)));
-    CPPUNIT_ASSERT_EQUAL(S("[1=1]"), evalRelation(Relation::ASSIGN, var("X"), val(1)));
-    CPPUNIT_ASSERT_EQUAL(S("[f(1,g(1))=f(1,g(1))]"), evalRelation(Relation::ASSIGN, fun("f", var("X"), fun("g", var("X"))), val(V("f", {1, V("g", {V(1)})}))));
-    CPPUNIT_ASSERT_EQUAL(S("[]"), evalRelation(Relation::ASSIGN, fun("f", var("X"), fun("g", var("X"))), val(V("f", {1, V("g", {V(2)})}))));
+    CPPUNIT_ASSERT_EQUAL(S("[]"), evalRelation(Relation::LT, val(NUM(1)), val(NUM(1))));
+    CPPUNIT_ASSERT_EQUAL(S("[1<2]"), evalRelation(Relation::LT, val(NUM(1)), val(NUM(2))));
+    CPPUNIT_ASSERT_EQUAL(S("[1=1]"), evalRelation(Relation::EQ, var("X"), val(NUM(1))));
+    CPPUNIT_ASSERT_EQUAL(S("[f(1,g(1))=f(1,g(1))]"), evalRelation(Relation::EQ, fun("f", var("X"), fun("g", var("X"))), val(FUN("f", {NUM(1), FUN("g", {NUM(1)})}))));
+    CPPUNIT_ASSERT_EQUAL(S("[]"), evalRelation(Relation::EQ, fun("f", var("X"), fun("g", var("X"))), val(FUN("f", {NUM(1), FUN("g", {NUM(2)})}))));
 }
 
 S evalPred(L<L<V>> vals, L<P<S,V>> bound, BinderType type, NAF naf, UTerm &&repr, bool recursive = false) {
-    Scripts scripts;
+    Scripts scripts(Gringo::Test::getTestModule());
     Term::VarSet boundSet;
     for (auto &x : bound) {
         U<VarTerm> v(var(x.first.c_str()));
@@ -139,12 +145,10 @@ S evalPred(L<L<V>> vals, L<P<S,V>> bound, BinderType type, NAF naf, UTerm &&repr
     dom.init();
     for (auto &x : vals) {
         ret.emplace_back();
-        for (auto &y : x) { dom.insert(y, y < Value(0)); }
-        dom.mark();
-        dom.unmark();
+        for (auto &y : x) { dom.insert(y, y < NUM(0)); }
         IndexUpdater *up{idx->getUpdater()};
         if (up) { up->update(); }
-        dom.expire();
+        dom.nextGeneration();
         idx->match();
         while (idx->next()) { 
             ret.back().emplace_back();
@@ -157,32 +161,32 @@ S evalPred(L<L<V>> vals, L<P<S,V>> bound, BinderType type, NAF naf, UTerm &&repr
 
 void TestLiteral::test_pred() {
     // BIND + LOOKUP + POS + OLD/NEW/ALL
-    CPPUNIT_ASSERT_EQUAL(S("[[f(1,1),f(1,2)],[f(1,1),f(1,2),f(1,3)]]"), evalPred({{V("f",{1,1}),V("f",{2,2}),V("f",{1,2})},{V("f",{1,3})}}, {{"X",1}}, BinderType::ALL, NAF::POS, fun("f",var("X"),var("Y")), true));
-    CPPUNIT_ASSERT_EQUAL(S("[[],[f(1,1),f(1,2)]]"), evalPred({{V("f",{1,1}),V("f",{2,2}),V("f",{1,2})},{V("f",{1,3})}}, {{"X",1}}, BinderType::OLD, NAF::POS, fun("f",var("X"),var("Y")), true));
-    CPPUNIT_ASSERT_EQUAL(S("[[f(1,1),f(1,2)],[f(1,3)]]"), evalPred({{V("f",{1,1}),V("f",{2,2}),V("f",{1,2})},{V("f",{1,3})}}, {{"X",1}}, BinderType::NEW, NAF::POS, fun("f",var("X"),var("Y")), true));
+    CPPUNIT_ASSERT_EQUAL(S("[[f(1,1),f(1,2)],[f(1,1),f(1,2),f(1,3)]]"), evalPred({{FUN("f",{NUM(1),NUM(1)}),FUN("f",{NUM(2),NUM(2)}),FUN("f",{NUM(1),NUM(2)})},{FUN("f",{NUM(1),NUM(3)})}}, {{"X",NUM(1)}}, BinderType::ALL, NAF::POS, fun("f",var("X"),var("Y")), true));
+    CPPUNIT_ASSERT_EQUAL(S("[[],[f(1,1),f(1,2)]]"), evalPred({{FUN("f",{NUM(1),NUM(1)}),FUN("f",{NUM(2),NUM(2)}),FUN("f",{NUM(1),NUM(2)})},{FUN("f",{NUM(1),NUM(3)})}}, {{"X",NUM(1)}}, BinderType::OLD, NAF::POS, fun("f",var("X"),var("Y")), true));
+    CPPUNIT_ASSERT_EQUAL(S("[[f(1,1),f(1,2)],[f(1,3)]]"), evalPred({{FUN("f",{NUM(1),NUM(1)}),FUN("f",{NUM(2),NUM(2)}),FUN("f",{NUM(1),NUM(2)})},{FUN("f",{NUM(1),NUM(3)})}}, {{"X",NUM(1)}}, BinderType::NEW, NAF::POS, fun("f",var("X"),var("Y")), true));
     // MATCH + POS + OLD/NEW/ALL + recursive
-    CPPUNIT_ASSERT_EQUAL(S("[[],[1],[1]]"), evalPred({{2},{1},{3}}, {}, BinderType::ALL, NAF::POS, val(1), true));
-    CPPUNIT_ASSERT_EQUAL(S("[[],[],[1]]"), evalPred({{2},{1},{3}}, {}, BinderType::OLD, NAF::POS, val(1), true));
-    CPPUNIT_ASSERT_EQUAL(S("[[],[1],[]]"), evalPred({{2},{1},{3}}, {}, BinderType::NEW, NAF::POS, val(1), true));
-    CPPUNIT_ASSERT_EQUAL(S("[[],[1],[1]]"), evalPred({{2},{1},{3}}, {}, BinderType::ALL, NAF::POS, val(1)));
+    CPPUNIT_ASSERT_EQUAL(S("[[],[1],[1]]"), evalPred({{NUM(2)},{NUM(1)},{NUM(3)}}, {}, BinderType::ALL, NAF::POS, val(NUM(1)), true));
+    CPPUNIT_ASSERT_EQUAL(S("[[],[],[1]]"), evalPred({{NUM(2)},{NUM(1)},{NUM(3)}}, {}, BinderType::OLD, NAF::POS, val(NUM(1)), true));
+    CPPUNIT_ASSERT_EQUAL(S("[[],[1],[]]"), evalPred({{NUM(2)},{NUM(1)},{NUM(3)}}, {}, BinderType::NEW, NAF::POS, val(NUM(1)), true));
+    CPPUNIT_ASSERT_EQUAL(S("[[],[1],[1]]"), evalPred({{NUM(2)},{NUM(1)},{NUM(3)}}, {}, BinderType::ALL, NAF::POS, val(NUM(1))));
     // MATCH NOT fact/unknown
-    CPPUNIT_ASSERT_EQUAL(S("[[1],[1]]"), evalPred({{1,2},{3}}, {}, BinderType::ALL, NAF::NOT, val(1)));
-    CPPUNIT_ASSERT_EQUAL(S("[[],[]]"), evalPred({{-1,2},{3}}, {}, BinderType::ALL, NAF::NOT, val(-1)));
-    CPPUNIT_ASSERT_EQUAL(S("[[1],[1]]"), evalPred({{2},{3}}, {}, BinderType::ALL, NAF::NOT, val(1), true));
-    CPPUNIT_ASSERT_EQUAL(S("[[#false],[#false]]"), evalPred({{2},{3}}, {}, BinderType::ALL, NAF::NOT, val(1)));
+    CPPUNIT_ASSERT_EQUAL(S("[[1],[1]]"), evalPred({{NUM(1),NUM(2)},{NUM(3)}}, {}, BinderType::ALL, NAF::NOT, val(NUM(1))));
+    CPPUNIT_ASSERT_EQUAL(S("[[],[]]"), evalPred({{NUM(-1),NUM(2)},{NUM(3)}}, {}, BinderType::ALL, NAF::NOT, val(NUM(-1))));
+    CPPUNIT_ASSERT_EQUAL(S("[[1],[1]]"), evalPred({{NUM(2)},{NUM(3)}}, {}, BinderType::ALL, NAF::NOT, val(NUM(1)), true));
+    CPPUNIT_ASSERT_EQUAL(S("[[#false],[#false]]"), evalPred({{NUM(2)},{NUM(3)}}, {}, BinderType::ALL, NAF::NOT, val(NUM(1))));
     // MATCH NOTNOT fact/unknown
-    CPPUNIT_ASSERT_EQUAL(S("[[1],[1]]"), evalPred({{1,2},{3}}, {}, BinderType::ALL, NAF::NOTNOT, val(1)));
-    CPPUNIT_ASSERT_EQUAL(S("[[-1],[-1]]"), evalPred({{-1,2},{3}}, {}, BinderType::ALL, NAF::NOTNOT, val(-1)));
-    CPPUNIT_ASSERT_EQUAL(S("[[1],[1]]"), evalPred({{2},{3}}, {}, BinderType::ALL, NAF::NOTNOT, val(1), true));
-    CPPUNIT_ASSERT_EQUAL(S("[[],[]]"), evalPred({{2},{3}}, {}, BinderType::ALL, NAF::NOTNOT, val(1)));
+    CPPUNIT_ASSERT_EQUAL(S("[[1],[1]]"), evalPred({{NUM(1),NUM(2)},{NUM(3)}}, {}, BinderType::ALL, NAF::NOTNOT, val(NUM(1))));
+    CPPUNIT_ASSERT_EQUAL(S("[[-1],[-1]]"), evalPred({{NUM(-1),NUM(2)},{NUM(3)}}, {}, BinderType::ALL, NAF::NOTNOT, val(NUM(-1))));
+    CPPUNIT_ASSERT_EQUAL(S("[[1],[1]]"), evalPred({{NUM(2)},{NUM(3)}}, {}, BinderType::ALL, NAF::NOTNOT, val(NUM(1)), true));
+    CPPUNIT_ASSERT_EQUAL(S("[[],[]]"), evalPred({{NUM(2)},{NUM(3)}}, {}, BinderType::ALL, NAF::NOTNOT, val(NUM(1))));
     // FULL + OLD/NEW/ALL
-    CPPUNIT_ASSERT_EQUAL(S("[[1,2],[1,2,3]]"), evalPred({{1,2},{3}}, {}, BinderType::ALL, NAF::POS, var("X"), true));
-    CPPUNIT_ASSERT_EQUAL(S("[[1,2],[3]]")    , evalPred({{1,2},{3}}, {}, BinderType::NEW, NAF::POS, var("X"), true));
-    CPPUNIT_ASSERT_EQUAL(S("[[],[1,2]]")     , evalPred({{1,2},{3}}, {}, BinderType::OLD, NAF::POS, var("X"), true));
+    CPPUNIT_ASSERT_EQUAL(S("[[1,2],[1,2,3]]"), evalPred({{NUM(1),NUM(2)},{NUM(3)}}, {}, BinderType::ALL, NAF::POS, var("X"), true));
+    CPPUNIT_ASSERT_EQUAL(S("[[1,2],[3]]")    , evalPred({{NUM(1),NUM(2)},{NUM(3)}}, {}, BinderType::NEW, NAF::POS, var("X"), true));
+    CPPUNIT_ASSERT_EQUAL(S("[[],[1,2]]")     , evalPred({{NUM(1),NUM(2)},{NUM(3)}}, {}, BinderType::OLD, NAF::POS, var("X"), true));
     // BIND + LOOKUP + POS + OLD/NEW/ALL
-    CPPUNIT_ASSERT_EQUAL(S("[[f(1,1),f(1,2)],[f(1,1),f(1,2),f(1,3)]]"), evalPred({{V("f",{1,1}),V("f",{2,2}),V("f",{1,2})},{V("f",{1,3})}}, {{"X",1}}, BinderType::ALL, NAF::POS, fun("f",var("X"),var("Y")), true));
-    CPPUNIT_ASSERT_EQUAL(S("[[],[f(1,1),f(1,2)]]"), evalPred({{V("f",{1,1}),V("f",{2,2}),V("f",{1,2})},{V("f",{1,3})}}, {{"X",1}}, BinderType::OLD, NAF::POS, fun("f",var("X"),var("Y")), true));
-    CPPUNIT_ASSERT_EQUAL(S("[[f(1,1),f(1,2)],[f(1,3)]]"), evalPred({{V("f",{1,1}),V("f",{2,2}),V("f",{1,2})},{V("f",{1,3})}}, {{"X",1}}, BinderType::NEW, NAF::POS, fun("f",var("X"),var("Y")), true));
+    CPPUNIT_ASSERT_EQUAL(S("[[f(1,1),f(1,2)],[f(1,1),f(1,2),f(1,3)]]"), evalPred({{FUN("f",{NUM(1),NUM(1)}),FUN("f",{NUM(2),NUM(2)}),FUN("f",{NUM(1),NUM(2)})},{FUN("f",{NUM(1),NUM(3)})}}, {{"X",NUM(1)}}, BinderType::ALL, NAF::POS, fun("f",var("X"),var("Y")), true));
+    CPPUNIT_ASSERT_EQUAL(S("[[],[f(1,1),f(1,2)]]"), evalPred({{FUN("f",{NUM(1),NUM(1)}),FUN("f",{NUM(2),NUM(2)}),FUN("f",{NUM(1),NUM(2)})},{FUN("f",{NUM(1),NUM(3)})}}, {{"X",NUM(1)}}, BinderType::OLD, NAF::POS, fun("f",var("X"),var("Y")), true));
+    CPPUNIT_ASSERT_EQUAL(S("[[f(1,1),f(1,2)],[f(1,3)]]"), evalPred({{FUN("f",{NUM(1),NUM(1)}),FUN("f",{NUM(2),NUM(2)}),FUN("f",{NUM(1),NUM(2)})},{FUN("f",{NUM(1),NUM(3)})}}, {{"X",NUM(1)}}, BinderType::NEW, NAF::POS, fun("f",var("X"),var("Y")), true));
 }
 
 TestLiteral::~TestLiteral() { }

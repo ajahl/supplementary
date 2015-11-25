@@ -142,7 +142,7 @@ LocatableClass<T>::~LocatableClass() { }
 
 template <class T, class... Args>
 std::unique_ptr<T> make_locatable(Location const &loc, Args&&... args) {
-    return make_unique<LocatableClass<T>>(loc, std::forward<Args>(args)...);
+    return gringo_make_unique<LocatableClass<T>>(loc, std::forward<Args>(args)...);
 }
 
 // }}}

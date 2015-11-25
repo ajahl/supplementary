@@ -67,28 +67,28 @@ using namespace Gringo::IO;
 
 namespace {
 
-ULit lit(char const *name) { return pred(NAF::POS, val(name)); }
+ULit lit(char const *name) { return pred(NAF::POS, val(ID(name))); }
 template <class... T>
-ULit lit(T... name) { return pred(NAF::POS, pool(val(name)...)); }
+ULit lit(T... name) { return pred(NAF::POS, pool(val(ID(name))...)); }
 
-UTerm dterm(int a, int b) { return dots(val(a), val(b)); }
+UTerm dterm(int a, int b) { return dots(val(NUM(a)), val(NUM(b))); }
 ULit dlit(int a, int b) { return pred(NAF::POS, dterm(a, b)); }
 
 UTerm aterm(char const *a, char const * b) { return binop(BinOp::ADD, var(a), var(b)); }
 ULit alit(char const * a, char const * b) { return pred(NAF::POS, aterm(a, b)); }
 
-BoundVec bound1() { return boundvec(Relation::LT, val(3), Relation::GT, val(1)); }
-BoundVec bound2() { return boundvec(Relation::LT, pool(val(1), val(2)), Relation::GT, pool(val(3), val(4))); }
-BoundVec bound3() { return boundvec(Relation::LT, pool(val(1), val(2))); }
+BoundVec bound1() { return boundvec(Relation::LT, val(NUM(3)), Relation::GT, val(NUM(1))); }
+BoundVec bound2() { return boundvec(Relation::LT, pool(val(NUM(1)), val(NUM(2))), Relation::GT, pool(val(NUM(3)), val(NUM(4)))); }
+BoundVec bound3() { return boundvec(Relation::LT, pool(val(NUM(1)), val(NUM(2)))); }
 
 BodyAggrElemVec bdvec1() { return bdelemvec(); }
 BodyAggrElemVec bdvec2() { return bdelemvec(termvec(), litvec()); }
-BodyAggrElemVec bdvec3() { return bdelemvec(termvec(val(1)), litvec(lit("p"))); }
-BodyAggrElemVec bdvec4() { return bdelemvec(termvec(val(1), val(2)), litvec(lit("p"), lit("q"))); }
+BodyAggrElemVec bdvec3() { return bdelemvec(termvec(val(NUM(1))), litvec(lit("p"))); }
+BodyAggrElemVec bdvec4() { return bdelemvec(termvec(val(NUM(1)), val(NUM(2))), litvec(lit("p"), lit("q"))); }
 BodyAggrElemVec bdvec5() { return bdelemvec(termvec(), litvec(), termvec(), litvec(lit("p"))); }
 // with pool term
-BodyAggrElemVec bdvec6() { return bdelemvec(termvec(pool(val(1), val(2))), litvec(pred(NAF::POS, pool(val("p"), val("q")))), termvec(), litvec()); }
-BodyAggrElemVec bdvec7() { return bdelemvec(termvec(pool(val(1), val(2)), pool(val(3), val(4))), litvec()); }
+BodyAggrElemVec bdvec6() { return bdelemvec(termvec(pool(val(NUM(1)), val(NUM(2)))), litvec(pred(NAF::POS, pool(val(ID("p")), val(ID("q"))))), termvec(), litvec()); }
+BodyAggrElemVec bdvec7() { return bdelemvec(termvec(pool(val(NUM(1)), val(NUM(2))), pool(val(NUM(3)), val(NUM(4)))), litvec()); }
 
 CondLitVec condvec1() { return condlitvec(); }
 CondLitVec condvec2() { return condlitvec(lit("p"), litvec()); }
@@ -99,52 +99,48 @@ CondLitVec condvec6() { return condlitvec(lit("p", "q"), litvec(lit("r", "s")), 
 
 HeadAggrElemVec hdvec1() { return hdelemvec(); }
 HeadAggrElemVec hdvec2() { return hdelemvec(termvec(), lit("p"), litvec()); }
-HeadAggrElemVec hdvec3() { return hdelemvec(termvec(val(1)), lit("p"), litvec(lit("q"))); }
-HeadAggrElemVec hdvec4() { return hdelemvec(termvec(val(1), val(2)), lit("p"), litvec(lit("q"), lit("r"))); }
+HeadAggrElemVec hdvec3() { return hdelemvec(termvec(val(NUM(1))), lit("p"), litvec(lit("q"))); }
+HeadAggrElemVec hdvec4() { return hdelemvec(termvec(val(NUM(1)), val(NUM(2))), lit("p"), litvec(lit("q"), lit("r"))); }
 HeadAggrElemVec hdvec5() { return hdelemvec(termvec(), lit("p"), litvec(), termvec(), lit("q"), litvec(lit("r"))); }
 // with pool term
-HeadAggrElemVec hdvec6() { return hdelemvec(termvec(pool(val(1), val(2))), lit("p"), litvec(lit("q", "r")), termvec(), lit("s"), litvec()); }
-HeadAggrElemVec hdvec7() { return hdelemvec(termvec(pool(val(1), val(2)), pool(val(3), val(4))), lit("p"), litvec()); }
-HeadAggrElemVec hdvec8() { return hdelemvec(termvec(val(1)), lit("p", "q"), litvec()); }
+HeadAggrElemVec hdvec6() { return hdelemvec(termvec(pool(val(NUM(1)), val(NUM(2)))), lit("p"), litvec(lit("q", "r")), termvec(), lit("s"), litvec()); }
+HeadAggrElemVec hdvec7() { return hdelemvec(termvec(pool(val(NUM(1)), val(NUM(2))), pool(val(NUM(3)), val(NUM(4)))), lit("p"), litvec()); }
+HeadAggrElemVec hdvec8() { return hdelemvec(termvec(val(NUM(1))), lit("p", "q"), litvec()); }
 
 std::string simplify(UBodyAggr &&x) {
     Projections project;
-    Term::DotsMap dots;
-    Term::ScriptMap scripts;
-    unsigned n = 0;
-    x->simplify(project, dots, scripts, n);
-    return to_string(std::make_pair(std::move(x), std::move(dots)));
+    SimplifyState state;
+    x->simplify(project, state, false);
+    return to_string(std::make_pair(std::move(x), std::move(state.dots)));
 }
 
 std::string simplify(UHeadAggr &&x) {
     Projections project;
-    Term::DotsMap dots;
-    Term::ScriptMap scripts;
-    unsigned n = 0;
-    x->simplify(project, dots, scripts, n);
-    return to_string(std::make_pair(std::move(x), std::move(dots)));
+    SimplifyState state;
+    x->simplify(project, state);
+    return to_string(std::make_pair(std::move(x), std::move(state.dots)));
 }
 
 std::string rewrite(UBodyAggr &&x) {
     Literal::AssignVec assign;
     Term::ArithmeticsMap arith;
     arith.emplace_back();
-    unsigned n = 0;
+    AuxGen gen;
     AssignLevel v;
     x->assignLevels(v);
     v.assignLevels();
-    x->rewriteArithmetics(arith, assign, n);
+    x->rewriteArithmetics(arith, assign, gen);
     return to_string(std::make_tuple(std::move(x), std::move(arith), std::move(assign)));
 }
 
 std::string rewrite(UHeadAggr &&x) {
     Term::ArithmeticsMap arith;
     arith.emplace_back();
-    unsigned n = 0;
+    AuxGen gen;
     AssignLevel v;
     x->assignLevels(v);
     v.assignLevels();
-    x->rewriteArithmetics(arith, n);
+    x->rewriteArithmetics(arith, gen);
     return to_string(std::make_pair(std::move(x), std::move(arith)));
 }
 
@@ -207,10 +203,10 @@ void TestAggregate::test_print() {
     CPPUNIT_ASSERT_EQUAL(std::string("3>#count{p:;q:}>1"), to_string(hdaggr(AggregateFunction::COUNT, bound1(), condvec5())));
     // disjunction
     CPPUNIT_ASSERT_EQUAL(std::string(""), to_string(hdaggr(condvec1())));
-    CPPUNIT_ASSERT_EQUAL(std::string("p:"), to_string(hdaggr(condvec2())));
-    CPPUNIT_ASSERT_EQUAL(std::string("p:q"), to_string(hdaggr(condvec3())));
-    CPPUNIT_ASSERT_EQUAL(std::string("p:q,r"), to_string(hdaggr(condvec4())));
-    CPPUNIT_ASSERT_EQUAL(std::string("p:;q:"), to_string(hdaggr(condvec5())));
+    CPPUNIT_ASSERT_EQUAL(std::string("p::"), to_string(hdaggr(condvec2())));
+    CPPUNIT_ASSERT_EQUAL(std::string("p::q"), to_string(hdaggr(condvec3())));
+    CPPUNIT_ASSERT_EQUAL(std::string("p::q,r"), to_string(hdaggr(condvec4())));
+    CPPUNIT_ASSERT_EQUAL(std::string("p::;q::"), to_string(hdaggr(condvec5())));
 }
 
 void TestAggregate::test_clone() {
@@ -249,10 +245,10 @@ void TestAggregate::test_clone() {
     CPPUNIT_ASSERT_EQUAL(std::string("3>#count{p:;q:}>1"), to_string(get_clone(hdaggr(AggregateFunction::COUNT, bound1(), condvec5()))));
     // disjunction
     CPPUNIT_ASSERT_EQUAL(std::string(""), to_string(get_clone(hdaggr(condvec1()))));
-    CPPUNIT_ASSERT_EQUAL(std::string("p:"), to_string(get_clone(hdaggr(condvec2()))));
-    CPPUNIT_ASSERT_EQUAL(std::string("p:q"), to_string(get_clone(hdaggr(condvec3()))));
-    CPPUNIT_ASSERT_EQUAL(std::string("p:q,r"), to_string(get_clone(hdaggr(condvec4()))));
-    CPPUNIT_ASSERT_EQUAL(std::string("p:;q:"), to_string(get_clone(hdaggr(condvec5()))));
+    CPPUNIT_ASSERT_EQUAL(std::string("p::"), to_string(get_clone(hdaggr(condvec2()))));
+    CPPUNIT_ASSERT_EQUAL(std::string("p::q"), to_string(get_clone(hdaggr(condvec3()))));
+    CPPUNIT_ASSERT_EQUAL(std::string("p::q,r"), to_string(get_clone(hdaggr(condvec4()))));
+    CPPUNIT_ASSERT_EQUAL(std::string("p::;q::"), to_string(get_clone(hdaggr(condvec5()))));
 }
 
 void TestAggregate::test_hash() {
@@ -391,28 +387,28 @@ void TestAggregate::test_unpool() {
     CPPUNIT_ASSERT_EQUAL(std::string("[3>#sum{1,3:;2,3:;1,4:;2,4:}>1]"), to_string(unpool(bdaggr(NAF::POS, AggregateFunction::SUM, bound1(), bdvec7()))));
     CPPUNIT_ASSERT_EQUAL(std::string("[1>#sum{}>3,2>#sum{}>3,1>#sum{}>4,2>#sum{}>4]"), to_string(unpool(bdaggr(NAF::POS, AggregateFunction::SUM, bound2(), bdvec1()))));
     CPPUNIT_ASSERT_EQUAL(std::string("[not 1>#min{}>3,not 2>#min{}>3,not 1>#min{}>4,not 2>#min{}>4]"), to_string(unpool(bdaggr(NAF::NOT, AggregateFunction::MIN, bound2(), bdvec1()))));
-    CPPUNIT_ASSERT_EQUAL(std::string("[3>#sum{1:p,q;2:p,q;:}>1]"), to_string(unpool(bdaggr(NAF::POS, AggregateFunction::SUM, bound1(), bdvec6()))));
-    CPPUNIT_ASSERT_EQUAL(std::string("[1>#sum{1:p,q;2:p,q;:},2>#sum{1:p,q;2:p,q;:}]"), to_string(unpool(bdaggr(NAF::POS, AggregateFunction::SUM, bound3(), bdvec6()))));
+    CPPUNIT_ASSERT_EQUAL(std::string("[3>#sum{1:p;1:q;2:p;2:q;:}>1]"), to_string(unpool(bdaggr(NAF::POS, AggregateFunction::SUM, bound1(), bdvec6()))));
+    CPPUNIT_ASSERT_EQUAL(std::string("[1>#sum{1:p;1:q;2:p;2:q;:},2>#sum{1:p;1:q;2:p;2:q;:}]"), to_string(unpool(bdaggr(NAF::POS, AggregateFunction::SUM, bound3(), bdvec6()))));
     // body lit aggregate
     CPPUNIT_ASSERT_EQUAL(std::string("[1>#sum{}>3,2>#sum{}>3,1>#sum{}>4,2>#sum{}>4]"), to_string(unpool(bdaggr(NAF::POS, AggregateFunction::SUM, bound2(), condvec1()))));
     CPPUNIT_ASSERT_EQUAL(std::string("[not 1>#min{}>3,not 2>#min{}>3,not 1>#min{}>4,not 2>#min{}>4]"), to_string(unpool(bdaggr(NAF::NOT, AggregateFunction::MIN, bound2(), condvec1()))));
-    CPPUNIT_ASSERT_EQUAL(std::string("[3>#sum{p:r,s;q:r,s;t:}>1]"), to_string(unpool(bdaggr(NAF::POS, AggregateFunction::SUM, bound1(), condvec6()))));
-    CPPUNIT_ASSERT_EQUAL(std::string("[1>#sum{p:r,s;q:r,s;t:},2>#sum{p:r,s;q:r,s;t:}]"), to_string(unpool(bdaggr(NAF::POS, AggregateFunction::SUM, bound3(), condvec6()))));
+    CPPUNIT_ASSERT_EQUAL(std::string("[3>#sum{p:r;p:s;q:r;q:s;t:}>1]"), to_string(unpool(bdaggr(NAF::POS, AggregateFunction::SUM, bound1(), condvec6()))));
+    CPPUNIT_ASSERT_EQUAL(std::string("[1>#sum{p:r;p:s;q:r;q:s;t:},2>#sum{p:r;p:s;q:r;q:s;t:}]"), to_string(unpool(bdaggr(NAF::POS, AggregateFunction::SUM, bound3(), condvec6()))));
     // conjunction
-    CPPUNIT_ASSERT_EQUAL(std::string("[p:r,q:r]"), to_string(unpool(bdaggr(lit("p", "q"), litvec(lit("r"))))));
-    CPPUNIT_ASSERT_EQUAL(std::string("[p:q,r]"), to_string(unpool(bdaggr(lit("p"), litvec(lit("q", "r"))))));
-    CPPUNIT_ASSERT_EQUAL(std::string("[p:r,s,q:r,s]"), to_string(unpool(bdaggr(lit("p", "q"), litvec(lit("r", "s"))))));
+    CPPUNIT_ASSERT_EQUAL(std::string("[p|q:r]"), to_string(unpool(bdaggr(lit("p", "q"), litvec(lit("r"))))));
+    CPPUNIT_ASSERT_EQUAL(std::string("[p:q;p:r]"), to_string(unpool(bdaggr(lit("p"), litvec(lit("q", "r"))))));
+    CPPUNIT_ASSERT_EQUAL(std::string("[p|q:r;p|q:s]"), to_string(unpool(bdaggr(lit("p", "q"), litvec(lit("r", "s"))))));
     // head tuple aggregate
     CPPUNIT_ASSERT_EQUAL(std::string("[3>#sum{1,3:p:;2,3:p:;1,4:p:;2,4:p:}>1]"), to_string(unpool(hdaggr(AggregateFunction::SUM, bound1(), hdvec7()))));
     CPPUNIT_ASSERT_EQUAL(std::string("[1>#sum{}>3,2>#sum{}>3,1>#sum{}>4,2>#sum{}>4]"), to_string(unpool(hdaggr(AggregateFunction::SUM, bound2(), hdvec1()))));
-    CPPUNIT_ASSERT_EQUAL(std::string("[3>#sum{1:p:q,r;2:p:q,r;:s:}>1]"), to_string(unpool(hdaggr(AggregateFunction::SUM, bound1(), hdvec6()))));
+    CPPUNIT_ASSERT_EQUAL(std::string("[3>#sum{1:p:q;1:p:r;2:p:q;2:p:r;:s:}>1]"), to_string(unpool(hdaggr(AggregateFunction::SUM, bound1(), hdvec6()))));
     CPPUNIT_ASSERT_EQUAL(std::string("[3>#sum{1:p:;1:q:}>1]"), to_string(unpool(hdaggr(AggregateFunction::SUM, bound1(), hdvec8()))));
     // head lit aggregate
     CPPUNIT_ASSERT_EQUAL(std::string("[1>#sum{}>3,2>#sum{}>3,1>#sum{}>4,2>#sum{}>4]"), to_string(unpool(hdaggr(AggregateFunction::SUM, bound2(), condvec1()))));
-    CPPUNIT_ASSERT_EQUAL(std::string("[3>#sum{p:r,s;q:r,s;t:}>1]"), to_string(unpool(hdaggr(AggregateFunction::SUM, bound1(), condvec6()))));
-    CPPUNIT_ASSERT_EQUAL(std::string("[1>#sum{p:r,s;q:r,s;t:},2>#sum{p:r,s;q:r,s;t:}]"), to_string(unpool(hdaggr(AggregateFunction::SUM, bound3(), condvec6()))));
+    CPPUNIT_ASSERT_EQUAL(std::string("[3>#sum{p:r;p:s;q:r;q:s;t:}>1]"), to_string(unpool(hdaggr(AggregateFunction::SUM, bound1(), condvec6()))));
+    CPPUNIT_ASSERT_EQUAL(std::string("[1>#sum{p:r;p:s;q:r;q:s;t:},2>#sum{p:r;p:s;q:r;q:s;t:}]"), to_string(unpool(hdaggr(AggregateFunction::SUM, bound3(), condvec6()))));
     // disjunction
-    CPPUNIT_ASSERT_EQUAL(std::string("[p:r,s;t:,q:r,s;t:]"), to_string(unpool(hdaggr(condvec6()))));
+    CPPUNIT_ASSERT_EQUAL(std::string("[p:&q::r;p:&q::s;t::]"), to_string(unpool(hdaggr(condvec6()))));
 }
 
 void TestAggregate::test_simplify() {
@@ -421,30 +417,30 @@ void TestAggregate::test_simplify() {
     // body lit aggregate
     CPPUNIT_ASSERT_EQUAL(std::string("(#Range0>#sum{#Range1:#Range2,#range(#Range1,3,4),#range(#Range2,5,6)},[(#Range0,1,2)])"), simplify(bdaggr(NAF::POS, AggregateFunction::SUM, boundvec(Relation::LT, dterm(1,2)), condlitvec(dlit(3,4), litvec(dlit(5,6))))));
     // conjunction
-    CPPUNIT_ASSERT_EQUAL(std::string("(#Range0:#Range1,#range(#Range1,3,4),[(#Range0,1,2)])"), simplify(bdaggr(dlit(1,2), litvec(dlit(3,4)))));
+    CPPUNIT_ASSERT_EQUAL(std::string("(#Range0&#range(#Range0,1,2):#Range1,#range(#Range1,3,4),[])"), simplify(bdaggr(dlit(1,2), litvec(dlit(3,4)))));
     // head tuple aggregate
     CPPUNIT_ASSERT_EQUAL(std::string("(#Range0>#sum{#Range1:#Range2:#Range3,#range(#Range1,3,4),#range(#Range2,5,6),#range(#Range3,7,8)},[(#Range0,1,2)])"), simplify(hdaggr(AggregateFunction::SUM, boundvec(Relation::LT, dterm(1,2)), hdelemvec(termvec(dterm(3,4)), dlit(5,6), litvec(dlit(7,8))))));
     // head lit aggregate
     CPPUNIT_ASSERT_EQUAL(std::string("(#Range0>#sum{#Range1:#Range2,#range(#Range1,3,4),#range(#Range2,5,6)},[(#Range0,1,2)])"), simplify(hdaggr(AggregateFunction::SUM, boundvec(Relation::LT, dterm(1,2)), condlitvec(dlit(3,4), litvec(dlit(5,6))))));
     // disjunction
-    CPPUNIT_ASSERT_EQUAL(std::string("(#Range0:#Range1,#range(#Range1,3,4),[(#Range0,1,2)])"), simplify(hdaggr(condlitvec(dlit(1,2), litvec(dlit(3,4))))));
+    CPPUNIT_ASSERT_EQUAL(std::string("(#Range0:#range(#Range0,1,2):#Range1,#range(#Range1,3,4),[])"), simplify(hdaggr(condlitvec(dlit(1,2), litvec(dlit(3,4))))));
 }
 
 void TestAggregate::test_rewriteArithmetics() {
     // body tuple aggregate
-    CPPUNIT_ASSERT_EQUAL(std::string("((A+B)>#sum{(C+D):#Arith0,#Arith0=(E+F)},[{}],[])"), rewrite(bdaggr(NAF::POS, AggregateFunction::SUM, boundvec(Relation::LT, aterm("A","B")), bdelemvec(termvec(aterm("C","D")), litvec(alit("E","F"))))));
-    CPPUNIT_ASSERT_EQUAL(std::string("(#Arith0=#sum{(C+D):#Arith0},[{(A+B):#Arith0}],[])"), rewrite(bdaggr(NAF::POS, AggregateFunction::SUM, boundvec(Relation::ASSIGN, aterm("A","B")), bdelemvec(termvec(aterm("C","D")), litvec(alit("A","B"))))));
+    CPPUNIT_ASSERT_EQUAL(std::string("(#Arith0>#sum{(C+D):#Arith1,#Arith1=(E+F)},[{(A+B):#Arith0}],[])"), rewrite(bdaggr(NAF::POS, AggregateFunction::SUM, boundvec(Relation::LT, aterm("A","B")), bdelemvec(termvec(aterm("C","D")), litvec(alit("E","F"))))));
+    CPPUNIT_ASSERT_EQUAL(std::string("(#Arith0=#sum{(C+D):#Arith0},[{(A+B):#Arith0}],[])"), rewrite(bdaggr(NAF::POS, AggregateFunction::SUM, boundvec(Relation::EQ, aterm("A","B")), bdelemvec(termvec(aterm("C","D")), litvec(alit("A","B"))))));
     // body lit aggregate
-    CPPUNIT_ASSERT_EQUAL(std::string("((A+B)>#sum{(C+D):#Arith0,#Arith0=(E+F)},[{}],[])"), rewrite(bdaggr(NAF::POS, AggregateFunction::SUM, boundvec(Relation::LT, aterm("A","B")), condlitvec(alit("C","D"), litvec(alit("E","F"))))));
-    CPPUNIT_ASSERT_EQUAL(std::string("(#Arith0=#sum{(C+D):#Arith0},[{(A+B):#Arith0}],[])"), rewrite(bdaggr(NAF::POS, AggregateFunction::SUM, boundvec(Relation::ASSIGN, aterm("A","B")), condlitvec(alit("C","D"), litvec(alit("A","B"))))));
+    CPPUNIT_ASSERT_EQUAL(std::string("(#Arith0>#sum{(C+D):#Arith1,#Arith1=(E+F)},[{(A+B):#Arith0}],[])"), rewrite(bdaggr(NAF::POS, AggregateFunction::SUM, boundvec(Relation::LT, aterm("A","B")), condlitvec(alit("C","D"), litvec(alit("E","F"))))));
+    CPPUNIT_ASSERT_EQUAL(std::string("(#Arith0=#sum{(C+D):#Arith0},[{(A+B):#Arith0}],[])"), rewrite(bdaggr(NAF::POS, AggregateFunction::SUM, boundvec(Relation::EQ, aterm("A","B")), condlitvec(alit("C","D"), litvec(alit("A","B"))))));
     // conjunction
-    CPPUNIT_ASSERT_EQUAL(std::string("((C+D):#Arith0,#Arith0=(E+F),[{}],[])"), rewrite(bdaggr(alit("C","D"), litvec(alit("E","F")))));
+    CPPUNIT_ASSERT_EQUAL(std::string("(#Arith0&#Arith0=(C+D):#Arith1,#Arith1=(E+F),[{}],[])"), rewrite(bdaggr(alit("C","D"), litvec(alit("E","F")))));
     // head tuple aggregate
-    CPPUNIT_ASSERT_EQUAL(std::string("((A+B)>#sum{(C+D):(E+F):#Arith0,#Arith0=(G+H)},[{}])"), rewrite(hdaggr(AggregateFunction::SUM, boundvec(Relation::LT, aterm("A","B")), hdelemvec(termvec(aterm("C","D")), alit("E", "F"), litvec(alit("G","H"))))));
+    CPPUNIT_ASSERT_EQUAL(std::string("(#Arith0>#sum{(C+D):(E+F):#Arith1,#Arith1=(G+H)},[{(A+B):#Arith0}])"), rewrite(hdaggr(AggregateFunction::SUM, boundvec(Relation::LT, aterm("A","B")), hdelemvec(termvec(aterm("C","D")), alit("E", "F"), litvec(alit("G","H"))))));
     // head lit aggregate
-    CPPUNIT_ASSERT_EQUAL(std::string("((A+B)>#sum{(C+D):#Arith0,#Arith0=(E+F)},[{}])"), rewrite(hdaggr(AggregateFunction::SUM, boundvec(Relation::LT, aterm("A","B")), condlitvec(alit("C","D"), litvec(alit("E","F"))))));
+    CPPUNIT_ASSERT_EQUAL(std::string("(#Arith0>#sum{(C+D):#Arith1,#Arith1=(E+F)},[{(A+B):#Arith0}])"), rewrite(hdaggr(AggregateFunction::SUM, boundvec(Relation::LT, aterm("A","B")), condlitvec(alit("C","D"), litvec(alit("E","F"))))));
     // disjunction
-    CPPUNIT_ASSERT_EQUAL(std::string("((C+D):#Arith0,#Arith0=(E+F),[{}])"), rewrite(hdaggr(condlitvec(alit("C","D"), litvec(alit("E","F"))))));
+    CPPUNIT_ASSERT_EQUAL(std::string("((C+D)::#Arith0,#Arith0=(E+F),#Arith1=(E+F),#Arith1=#Arith0,[{}])"), rewrite(hdaggr(condlitvec(alit("C","D"), litvec(alit("E","F"))))));
 }
 
 TestAggregate::~TestAggregate() { }

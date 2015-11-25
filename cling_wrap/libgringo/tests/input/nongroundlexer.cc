@@ -25,6 +25,7 @@
 #include "input/nongroundgrammar/grammar.hh"
 #include "gringo/value.hh"
 #include "gringo/scripts.hh"
+#include "tests/gringo_module.hh"
 
 #include <cppunit/TestFixture.h>
 #include <cppunit/TestAssert.h>
@@ -66,7 +67,7 @@ void TestNongroundLexer::test_lexer() {
     Output::OutputBase out({}, oss);
     Program prg;
     Defines defs;
-    Scripts scripts;
+    Scripts scripts(Gringo::Test::getTestModule());
     NongroundProgramBuilder pb(scripts, prg, out, defs);
     NonGroundParser ngp(pb);
     std::string in = 

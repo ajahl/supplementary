@@ -21,7 +21,7 @@
 #include <gringo/ground/instantiation.hh>
 #include <gringo/output/output.hh>
 
-//#define DEBUG_INSTANTIATION
+#define DEBUG_INSTANTIATION 0
 
 namespace Gringo { namespace Ground {
 
@@ -60,40 +60,40 @@ BackjumpBinder::~BackjumpBinder() { }
 Instantiator::Instantiator(SolutionCallback &callback)
     : callback(callback) { }
 Instantiator::Instantiator(Instantiator &&) noexcept = default;
+Instantiator &Instantiator::operator=(Instantiator &&x) noexcept {
+    callback = x.callback;
+    binders  = std::move(x.binders);
+    enqueued = x.enqueued;
+    return *this;
+}
 void Instantiator::add(UIdx &&index, DependVec &&depends) {
     binders.emplace_back(std::move(index), std::move(depends));
 }
 void Instantiator::finalize(DependVec &&depends) {
-    binders.emplace_back(make_unique<SolutionBinder>(), std::move(depends));
+    binders.emplace_back(gringo_make_unique<SolutionBinder>(), std::move(depends));
 }
-void Instantiator::enqueue(Queue &queue) {
-    if (!enqueued) {
-        enqueued = true;
-        queue.enqueue(*this);
-    }
-}
+void Instantiator::enqueue(Queue &queue) { queue.enqueue(*this); }
 void Instantiator::instantiate(Output::OutputBase &out) {
-#ifdef DEBUG_INSTANTIATION
+#if DEBUG_INSTANTIATION > 0
     std::cerr << "  instantiate: " << *this << std::endl;
 #endif
-    enqueued = false;
     auto ie = binders.rend(), it = ie - 1, ib = binders.rbegin();
     it->match();
     do {
-#ifdef DEBUG_INSTANTIATION
+#if DEBUG_INSTANTIATION > 1
         std::cerr << "    start at: " << *it << std::endl;
 #endif
         it->backjumpable = true;
         if (it->next()) {
             for (--it; it->first(); --it) { it->backjumpable = true; }
-#ifdef DEBUG_INSTANTIATION
+#if DEBUG_INSTANTIATION > 1
             std::cerr << "    advanced to: " << *it << std::endl;
 #endif
         }
         if (it == ib) { callback.report(out); }
         for (auto &x : it->depends) { binders[x].backjumpable = false; }
         for (++it; it != ie && it->backjumpable; ++it) { }
-#ifdef DEBUG_INSTANTIATION
+#if DEBUG_INSTANTIATION > 1
         std::cerr << "    backfumped to: ";
         if (it != ie) { it->print(std::cerr); }
         else          { std::cerr << "the head :)"; }
@@ -110,42 +110,60 @@ void Instantiator::print(std::ostream &out) const {
     print_comma(out, binders, " , ", std::bind(&BackjumpBinder::print, _2, _1));
     out << ".";
 }
+unsigned Instantiator::priority() const {
+    return callback.priority();
+}
 Instantiator::~Instantiator() { }
 
 // }}}
 // {{{ definition of Queue
 
 void Queue::process(Output::OutputBase &out) {
-    while (!queue.empty()) {
-#ifdef DEBUG_INSTANTIATION
-        std::cerr << "************start step" << std::endl;
+    bool empty;
+    do {
+        empty = true;
+        for (auto &queue : queues) {
+            if (!queue.empty()) {
+#if DEBUG_INSTANTIATION > 0
+                std::cerr << "************start step" << std::endl;
 #endif
-        queue.swap(current);
-        for (Instantiator &x : current) {
-            x.instantiate(out);
-            x.callback.mark();
+                queue.swap(current);
+                for (Instantiator &x : current) { 
+                    x.instantiate(out);
+                    x.enqueued = false;
+                }
+                for (Instantiator &x : current) { x.callback.propagate(*this); }
+                current.clear();
+                // OPEN -> NEW, NEW -> OLD
+                auto jt = std::remove_if(domains.begin(), domains.end(), [](Domain &x) -> bool {
+                    x.nextGeneration();
+                    return !x.dequeue();
+                });
+                domains.erase(jt, domains.end());
+                empty = false;
+                break;
+            }
         }
-        for (Instantiator &x : current) { x.callback.unmark(*this); }
-        current.clear();
-        auto jt(domains.begin());
-        for (auto it(jt), ie(domains.end()); it != ie; ++it) {
-            if (it->get().expire()) { *jt++ = *it; }
-            else                    { it->get().setEnqueued(false); }
-        }
-        domains.erase(jt, domains.end());
     }
-    for (Domain &x : domains) { 
-        x.expire();
-        x.setEnqueued(false);
+    while (!empty);
+    // NEW -> OLD
+    for (Domain &x : domains) {
+        x.nextGeneration();
+        if (x.dequeue()) { assert(false); }
     }
     domains.clear();
 }
-void Queue::enqueue(Instantiator &inst) { queue.emplace_back(inst); }
+void Queue::enqueue(Instantiator &inst) {
+    if (!inst.enqueued) {
+        queues[inst.priority()].emplace_back(inst);
+        inst.enqueued = true;
+    }
+}
 void Queue::enqueue(Domain &x) {
     if (!x.isEnqueued()) { 
-        x.setEnqueued(true);
         domains.emplace_back(x);
     }
+    x.enqueue();
 }
 Queue::~Queue() { }
 

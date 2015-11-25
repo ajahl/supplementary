@@ -1,6 +1,5 @@
 // {{{ GPL License 
 
-// This file is part of gringo - a grounder for logic programs.
 // Copyright (C) 2013  Roland Kaminski
 
 // This program is free software: you can redistribute it and/or modify
@@ -28,15 +27,10 @@
 
 namespace Gringo { namespace Ground {
 
-// TODO: check if a has-a relation ship for bodyoccurrences would work too
-//       the domains should not inherit from AbstractDomain
-//       this is all quite messy at the moment 
-//       better turn this into a proper interface at some point
-
-// {{{ declaraion of HeadDefinition
+// {{{1 declaration of HeadDefinition
 
 struct HeadDefinition : HeadOccurrence {
-    HeadDefinition(UTerm &&repr);
+    HeadDefinition(UTerm &&repr, Domain *domain);
     HeadDefinition(HeadDefinition &&) = default;
     UGTerm getRepr() const;
     void collectImportant(Term::VarSet &vars);
@@ -45,708 +39,804 @@ struct HeadDefinition : HeadOccurrence {
     virtual ~HeadDefinition();
 
     UTerm repr;
-    typedef std::unordered_map<IndexUpdater*, unsigned> OffsetMap;
-    typedef std::vector<std::reference_wrapper<Instantiator>> RInstVec;
-    typedef std::vector<std::pair<IndexUpdater*, RInstVec>> EnqueueVec;
+    using OffsetMap = std::unordered_map<IndexUpdater*, unsigned>;
+    using RInstVec = std::vector<std::reference_wrapper<Instantiator>>;
+    using EnqueueVec = std::vector<std::pair<IndexUpdater*, RInstVec>>;
+    Domain *domain;
     OffsetMap offsets;
     EnqueueVec enqueueVec;
     bool active = false;
 };
-typedef std::vector<HeadDefinition> HeadDefVec;
+using HeadDefVec = std::vector<HeadDefinition>;
 using UHeadDef = std::unique_ptr<HeadDefinition>;
 
-// }}}
+// }}}1
+// {{{1 declaration of AbstractStatement
 
-// {{{ declaration of BodyAggregateDomain
+struct AbstractStatement : Statement, SolutionCallback {
+    AbstractStatement(UTerm &&repr, Domain *domain, ULitVec &&lits, ULitVec &&auxLits);
+    virtual ~AbstractStatement();
 
-using Output::BodyAggregateState;
-
-struct BodyAggregateDomain : AbstractDomain<BodyAggregateState> {
-    BodyAggregateDomain(UTerm &&repr, BoundVec &&bounds, AggregateFunction fun);
-    void insert(Value const &repr, ValVec const &tuple, Output::LitVec const &cond, Location const &loc);
-    virtual BodyAggregateDomain::element_type &reserve(Value x);
-    virtual void mark();
-    virtual void unmark();
-    virtual ~BodyAggregateDomain();
-
-    UTerm             repr;
-    Location const   *loc;
-    BoundVec          bounds;
-    AggregateFunction fun;
-    unsigned          numBlocked = 0;
-    unsigned          blocked    = 0;
-    unsigned          marks      = 0;
-    bool              positive   = true;
-};
-typedef std::shared_ptr<BodyAggregateDomain> SBodyAggregateDomain;
-
-// }}}
-// {{{ declaration of AssignmentAggregateDomain
-
-using Output::AssignmentAggregateState;
-
-struct AssignmentAggregateDomain : AbstractDomain<AssignmentAggregateState> {
-    using DataMap = std::unordered_map<Value, AssignmentAggregateState::Data>;
-    using DataVec = std::vector<std::reference_wrapper<DataMap::value_type>>;
-
-    AssignmentAggregateDomain(UTerm &&repr, UTerm &&specialRepr, AggregateFunction fun);
-    void insert(Value const &repr, ValVec const &tuple, Output::LitVec const &cond, Location const &loc);
-    template <class Vec>
-    void insert(Vec const &values, DataMap::value_type &y);
-
-    virtual void mark();
-    virtual void unmark();
-
-    virtual ~AssignmentAggregateDomain();
-
-    DataMap           dataMap;
-    DataVec           dataVec;
-    UTerm             repr;
-    UTerm             specialRepr;
-    Location const   *loc;
-    AggregateFunction fun;
-    ValVec            valsCache;
-    unsigned          numBlocked  = 0;
-    unsigned          blocked     = 0;
-    unsigned          marks       = 0;
-    unsigned          offset      = 0;
-};
-typedef std::shared_ptr<AssignmentAggregateDomain> SAssignmentAggregateDomain;
-
-// }}} 
-// {{{ declaration of ConjunctionDomain
-
-using Output::ConjunctionState;
-
-struct ConjunctionHead : BodyOcc {
-    ConjunctionHead(PredicateDomain &predDom, UTerm &&predRep, PredicateDomain &headDom, UTerm &&headRep)
-        : predRep(std::move(predRep))
-        , headRep(std::move(headRep))
-        , predDef(get_clone(this->predRep))
-        , predDom(predDom)
-        , headDom(headDom)                              { }
-        virtual UGTerm getRepr() const                  { return headRep->gterm(); }
-        virtual bool isPositive() const                 { return true; };
-        virtual bool isNegative() const                 { return false; };
-        virtual void setType(OccurrenceType x)          { type = x; };
-        virtual OccurrenceType getType() const          { return type; }
-        virtual DefinedBy &definedBy()                  { return defines; }
-        virtual void checkDefined(LocSet &, SigSet const &) const { }
-        virtual ~ConjunctionHead()                      { }
-
-    DefinedBy        defines;
-    UTerm            predRep;
-    UTerm            headRep;
-    HeadDefinition   predDef;
-    PredicateDomain &predDom;
-    PredicateDomain &headDom;
-    OccurrenceType   type    = OccurrenceType::POSITIVELY_STRATIFIED;
-};
-
-struct ConjunctionDomain : AbstractDomain<ConjunctionState> {
-    using UConjHd = std::unique_ptr<ConjunctionHead>;
-
-    ConjunctionDomain(UTerm &&domRepr, PredicateDomain *predDom, UTerm &&predRep, PredicateDomain *headDom, UTerm &&headRep, ULitVec &&lits);
-    virtual void mark();
-    virtual void unmark();
-    void insert();
-    void unblock(bool fact);
-    void insertEmpty();
-    virtual ~ConjunctionDomain();
-
-    UTerm    rep;
-    UConjHd  head;
-    ULitVec  lits;
-    unsigned numBlocked = 0;
-    unsigned blocked    = 0;
-    unsigned marks      = 0;
-};
-typedef std::shared_ptr<ConjunctionDomain> SConjunctionDomain;
-
-// }}}
-// {{{ declaration of HeadAggregateDomain
-
-struct HeadDummyDep : HeadOccurrence, BodyOcc {
-    HeadDummyDep(FWString name) : name(name)             { }
-    virtual void defines(IndexUpdater &, Instantiator *) { }
-    virtual UGTerm getRepr() const                       { return make_unique<GValTerm>(name); }
-    virtual bool isPositive() const                      { return true; }
-    virtual bool isNegative() const                      { return false; }
-    virtual void setType(OccurrenceType)                 { }
-    virtual OccurrenceType getType() const               { return OccurrenceType::POSITIVELY_STRATIFIED; }
-    virtual DefinedBy &definedBy()                       { return def; }
-    virtual void checkDefined(LocSet &, SigSet const &) const      { }
-    virtual ~HeadDummyDep()                              { }
-
-    FWString name;
-    DefinedBy def;
-};
-
-using HeadAggregateState = Output::HeadAggregateState;
-struct HeadAggregateDomain : AbstractDomain<HeadAggregateState> {
-    using MarksQueue    = std::deque<unsigned>;
-    using AccumulateVec = std::vector<std::pair<PredicateDomain&, HeadDefinition>>;
-    using TodoVec       = std::vector<std::reference_wrapper<HeadAggregateState>>;
-
-    HeadAggregateDomain(UTerm &&repr, AggregateFunction fun, BoundVec &&bounds, FWString dummy);
-    HeadAggregateState &insert(Value rep);
-    void accumulate(unsigned headNum, ValVec const &tuple, Output::LitVec const &lits, Location const &loc);
-    AccumulateVec::value_type &head(unsigned x) { return heads[x-1]; }
-    virtual void accumulateMark();
-    virtual void accumulateUnmark(Queue &queue);
-    virtual void mark();
-    virtual void unmark();
-    virtual ~HeadAggregateDomain();
-
-    MarksQueue        marks;
-    UTerm             repr;
-    AggregateFunction fun;
-    BoundVec          bounds;
-    HeadDummyDep      dummy;
-    AccumulateVec     heads;
-    TodoVec           todo;
-    unsigned          numBlocked = 0;
-    unsigned          blocked    = 0;
-};
-typedef std::shared_ptr<HeadAggregateDomain> SHeadAggregateDomain;
-
-// }}}
-// {{{ declaration of DisjunctionDomain
-
-using DisjunctionState = Output::DisjunctionState;
-struct DisjunctionDomain : AbstractDomain<DisjunctionState> {
-    using MarksQueue = std::deque<unsigned>;
-
-    DisjunctionDomain(UTerm &&repr);
-    DisjunctionState &insert(Value rep);
-    void accumulate(PredicateDomain::element_type *head, Output::LitVec const &lits);
-    virtual void mark();
-    virtual void unmark();
-    virtual ~DisjunctionDomain();
-
-    MarksQueue        marks;
-    UTerm             repr;
-};
-typedef std::shared_ptr<DisjunctionDomain> SDisjunctionDomain;
-
-// }}}
-// {{{ declaration of DisjointDomain
-
-using Output::DisjointState;
-
-struct DisjointDomain : AbstractDomain<DisjointState> {
-    DisjointDomain(UTerm &&repr);
-    void insert(Value const &repr, ValVec const &tuple, CSPGroundAdd &&value, int fixed, Output::LitVec const &cond);
-    void insert(Value const &repr);
-    virtual void mark();
-    virtual void unmark();
-    virtual ~DisjointDomain();
-
-    UTerm    repr;
-    unsigned numBlocked = 0;
-    unsigned blocked    = 0;
-    unsigned marks      = 0;
-};
-using SDisjointDomain = std::shared_ptr<DisjointDomain>;
-
-// }}}
-
-// {{{ declaration of BodyAggregateLiteral
-
-struct BodyAggregateLiteral : Literal, BodyOcc {
-    BodyAggregateLiteral(SBodyAggregateDomain dom, NAF naf);
-    virtual void print(std::ostream &out) const;
-    virtual bool isRecursive() const;
-    virtual BodyOcc *occurrence();
-    virtual void collect(VarTermBoundVec &vars) const;
-    virtual UGTerm getRepr() const;
-    virtual bool isPositive() const;
-    virtual bool isNegative() const;
-    virtual void setType(OccurrenceType x);
-    virtual UIdx index(Scripts &scripts, BinderType type, Term::VarSet &bound);
-    virtual OccurrenceType getType() const;
-    virtual DefinedBy &definedBy();
-    virtual Score score(Term::VarSet const &bound);
-    virtual Output::Literal *toOutput();
-    virtual void checkDefined(LocSet &done, SigSet const &edb) const;
-    virtual ~BodyAggregateLiteral();
-
-    SBodyAggregateDomain dom;
-    DefinedBy defs;
-    Output::BodyAggregate gLit;
-    OccurrenceType type = OccurrenceType::POSITIVELY_STRATIFIED;
-};
-
-// }}}
-// {{{ declaration of DisjointLiteral
-
-struct DisjointLiteral : Literal, BodyOcc {
-    DisjointLiteral(SDisjointDomain dom, NAF naf);
-    virtual void print(std::ostream &out) const;
-    virtual bool isRecursive() const;
-    virtual BodyOcc *occurrence();
-    virtual void collect(VarTermBoundVec &vars) const;
-    virtual UGTerm getRepr() const;
-    virtual bool isPositive() const;
-    virtual bool isNegative() const;
-    virtual void setType(OccurrenceType x);
-    virtual UIdx index(Scripts &scripts, BinderType type, Term::VarSet &bound);
-    virtual OccurrenceType getType() const;
-    virtual DefinedBy &definedBy();
-    virtual Score score(Term::VarSet const &bound);
-    virtual Output::Literal *toOutput();
-    virtual void checkDefined(LocSet &done, SigSet const &edb) const;
-    virtual ~DisjointLiteral();
-
-    SDisjointDomain         dom;
-    DefinedBy               defs;
-    Output::DisjointLiteral gLit;
-    OccurrenceType          type = OccurrenceType::POSITIVELY_STRATIFIED;
-};
-
-// }}}
-// {{{ declaration of AssignmentAggregateLiteral
-
-struct AssignmentAggregateLiteral : Literal, BodyOcc {
-    AssignmentAggregateLiteral(SAssignmentAggregateDomain dom);
-    virtual void print(std::ostream &out) const;
-    virtual bool isRecursive() const;
-    virtual BodyOcc *occurrence();
-    virtual void collect(VarTermBoundVec &vars) const;
-    virtual UGTerm getRepr() const;
-    virtual bool isPositive() const;
-    virtual bool isNegative() const;
-    virtual void setType(OccurrenceType x);
-    virtual UIdx index(Scripts &scripts, BinderType type, Term::VarSet &bound);
-    virtual OccurrenceType getType() const;
-    virtual DefinedBy &definedBy();
-    virtual Score score(Term::VarSet const &bound);
-    virtual Output::Literal *toOutput();
-    virtual void checkDefined(LocSet &done, SigSet const &edb) const;
-    virtual ~AssignmentAggregateLiteral();
-
-    SAssignmentAggregateDomain dom;
-    DefinedBy defs;
-    Output::AssignmentAggregate gLit;
-    OccurrenceType type = OccurrenceType::POSITIVELY_STRATIFIED;
-};
-
-// }}}
-// {{{ declaration of ConjunctionLiteral
-
-struct ConjunctionLiteral : Literal, BodyOcc {
-    ConjunctionLiteral(SConjunctionDomain dom);
-    virtual void print(std::ostream &out) const;
-    virtual bool isRecursive() const;
-    virtual BodyOcc *occurrence();
-    virtual void collect(VarTermBoundVec &vars) const;
-    virtual UGTerm getRepr() const;
-    virtual bool isPositive() const;
-    virtual bool isNegative() const;
-    virtual void setType(OccurrenceType x);
-    virtual OccurrenceType getType() const;
-    virtual DefinedBy &definedBy();
-    virtual UIdx index(Scripts &scripts, BinderType type, Term::VarSet &bound);
-    virtual Score score(Term::VarSet const &bound);
-    virtual Output::Literal *toOutput();
-    virtual void checkDefined(LocSet &done, SigSet const &edb) const;
-    virtual ~ConjunctionLiteral();
-
-    SConjunctionDomain dom;
-    DefinedBy defs;
-    Output::Conjunction gLit;
-    OccurrenceType type = OccurrenceType::POSITIVELY_STRATIFIED;
-};
-
-// }}}
-// {{{ declaration of HeadAggregateLiteral
-
-struct HeadAggregateLiteral : Literal, BodyOcc {
-    HeadAggregateLiteral(SHeadAggregateDomain dom);
-    virtual void print(std::ostream &out) const;
-    virtual bool isRecursive() const;
-    virtual BodyOcc *occurrence();
-    virtual void collect(VarTermBoundVec &vars) const;
-    virtual UGTerm getRepr() const;
-    virtual bool isPositive() const;
-    virtual bool isNegative() const;
-    virtual void setType(OccurrenceType x);
-    virtual UIdx index(Scripts &scripts, BinderType type, Term::VarSet &bound);
-    virtual OccurrenceType getType() const;
-    virtual DefinedBy &definedBy();
-    virtual Score score(Term::VarSet const &bound);
-    virtual Output::Literal *toOutput();
-    virtual void checkDefined(LocSet &done, SigSet const &edb) const;
-    virtual ~HeadAggregateLiteral();
-
-    SHeadAggregateDomain dom;
-    DefinedBy            defs;
-    HeadAggregateDomain::element_type *gResult = nullptr;
-    OccurrenceType       type = OccurrenceType::POSITIVELY_STRATIFIED;
-};
-
-// }}}
-// {{{ declaration of DisjunctionLiteral
-
-struct DisjunctionLiteral : Literal, BodyOcc {
-    DisjunctionLiteral(SDisjunctionDomain dom);
-    virtual void print(std::ostream &out) const;
-    virtual bool isRecursive() const;
-    virtual BodyOcc *occurrence();
-    virtual void collect(VarTermBoundVec &vars) const;
-    virtual UGTerm getRepr() const;
-    virtual bool isPositive() const;
-    virtual bool isNegative() const;
-    virtual void setType(OccurrenceType x);
-    virtual UIdx index(Scripts &scripts, BinderType type, Term::VarSet &bound);
-    virtual OccurrenceType getType() const;
-    virtual DefinedBy &definedBy();
-    virtual Score score(Term::VarSet const &bound);
-    virtual Output::Literal *toOutput();
-    virtual void checkDefined(LocSet &done, SigSet const &edb) const;
-    virtual ~DisjunctionLiteral();
-
-    SDisjunctionDomain               dom;
-    DefinedBy                        defs;
-    DisjunctionDomain::element_type *gResult = nullptr;
-    OccurrenceType                   type    = OccurrenceType::POSITIVELY_STRATIFIED;
-};
-
-// }}}
-
-// {{{ declaration of BodyAggregateAccumulate
-
-struct BodyAggregateAccumulate : Statement, SolutionCallback {
-    // Note: relation literals are used to check bounds and if necessary accumulate neutral elements
-    BodyAggregateAccumulate(SBodyAggregateDomain dom, UTermVec &&tuple, ULitVec &&lits, ULitVec &&auxLits);
-    virtual bool isNormal() const;
+    virtual void collectImportant(Term::VarSet &vars);
+    virtual void printBody(std::ostream &out) const;
+    // {{{2 Statement interface
+    virtual bool isNormal() const; // false by default
     virtual void analyze(Dep::Node &node, Dep &dep);
     virtual void startLinearize(bool active);
     virtual void linearize(Scripts &scripts, bool positive);
     virtual void enqueue(Queue &q);
-    virtual void print(std::ostream &out) const;
-    virtual void mark();
-    virtual void report(Output::OutputBase &out);
-    virtual void unmark(Queue &queue);
+    // {{{2 SolutionCallback  interface
     virtual void printHead(std::ostream &out) const;
-    virtual ~BodyAggregateAccumulate();
+    virtual void propagate(Queue &queue);
+    // {{{2 Printable interface
+    virtual void print(std::ostream &out) const;
+    // }}}2
 
-    SBodyAggregateDomain dom; //!< domain of the aggregate
-    HeadDefinition defines;
-    UTermVec tuple;           //!< tuple to accumulate
-    ULitVec  lits;            //!< condition literals
-    ULitVec  auxLits;         //!< literals necessary for grounding
-    InstVec  insts;
+    HeadDefinition         def;
+    ULitVec                lits;
+    ULitVec                auxLits;
+    InstVec                insts;
 };
+// }}}1
 
-// }}}
-// {{{ declaration of DisjointAccumulate
+// {{{1 declaration of Rule
 
-struct DisjointAccumulate : Statement, SolutionCallback {
-    DisjointAccumulate(SDisjointDomain dom, ULitVec &&lits, ULitVec &&auxLits);
-    DisjointAccumulate(SDisjointDomain dom, UTermVec &&tuple, CSPAddTerm &&value, ULitVec &&lits, ULitVec &&auxLits);
-    virtual bool isNormal() const;
-    virtual void analyze(Dep::Node &node, Dep &dep);
-    virtual void startLinearize(bool active);
-    virtual void linearize(Scripts &scripts, bool positive);
-    virtual void enqueue(Queue &q);
-    virtual void print(std::ostream &out) const;
-    virtual void mark();
-    virtual void report(Output::OutputBase &out);
-    virtual void unmark(Queue &queue);
-    virtual void printHead(std::ostream &out) const;
-    virtual ~DisjointAccumulate();
+enum class RuleType : unsigned short { EXTERNAL, NORMAL };
 
-    struct Value {
-        Value(UTermVec &&tuple, CSPAddTerm &&value)
-            : tuple(std::move(tuple))
-            , value(std::move(value)) { }
-        UTermVec   tuple;
-        CSPAddTerm value;
-    };
-    using UVal = std::unique_ptr<Value>;
-
-    SDisjointDomain dom;
-    HeadDefinition  defines;
-    UVal            val;
-    ULitVec         lits;
-    ULitVec         auxLits;
-    InstVec         insts;
-    ExternalBodyOcc ext;
-};
-
-// }}}
-// {{{ declaration of AssignmentAggregateAccumulate
-
-struct AssignmentAggregateAccumulate : Statement, SolutionCallback {
-    AssignmentAggregateAccumulate(SAssignmentAggregateDomain dom, UTermVec const &tuple, ULitVec &&lits, ULitVec &&auxLits);
-    virtual bool isNormal() const;
-    virtual void analyze(Dep::Node &node, Dep &dep);
-    virtual void startLinearize(bool active);
-    virtual void linearize(Scripts &scripts, bool positive);
-    virtual void enqueue(Queue &q);
-    virtual void print(std::ostream &out) const;
-    virtual void mark();
-    virtual void report(Output::OutputBase &out);
-    virtual void unmark(Queue &queue);
-    virtual void printHead(std::ostream &out) const;
-    virtual ~AssignmentAggregateAccumulate();
-
-    SAssignmentAggregateDomain dom;
-    HeadDefinition             defines;
-    UTermVec                   tuple;
-    ULitVec                    lits;
-    ULitVec                    auxLits;
-    InstVec                    insts;
-};
-
-// }}}
-// {{{ declaration of ConjunctionAccumulate
-
-    /* representation
-     *   input(V) :- input(U); edge(U,V); input(W) : edge(U,W), V != W; not observed(U;V).
-     *     d1(U,V),           <~ input(U), edge(U,V), not observed(U;V).
-     *     d1(U,V), d2(U,V,W) <~ input(U), edge(U,V), edge(U,W), V != W, not observed(U;V).
-     *     d1(U,V)            <~ input(W), d2(U,V,W).
-     *     input(V) :- edge(U,V); input(U); d1(U,V,W); not observed(U;V).
-     * important variables
-     *   d1(U,V) and input(W) as well as the usual candidates
-     * the first rule handles the empty case
-     * the second rules handles two cases
-     *   if the body of the nested rule is not fact or the input(W) is fact
-     *     a tuple d1(U,V) is accumulated 
-     *     d1(U,V,W) an element is added to the aggregate (possibly applying optimizations)
-     *   otherwise
-     *     d1(U,V) is marked and must not be imported into the binders
-     *     d2(U,V,W) is accumulated
-     *     the mark corresponds is just an atom over input(W)
-     * the third rule waits for head atoms of the nested rule to become true
-     *   d1(U,V,W) is matches if it has no marked elements
-     */
-
-struct ConjunctionAccumulateEmpty : Statement, SolutionCallback {
-    ConjunctionAccumulateEmpty(SConjunctionDomain conjDom, ULitVec &&auxLits);
-    virtual bool isNormal() const;
-    virtual void analyze(Dep::Node &node, Dep &dep);
-    virtual void startLinearize(bool active);
-    virtual void linearize(Scripts &scripts, bool positive);
-    virtual void print(std::ostream &out) const;
-    virtual void enqueue(Queue &q);
-    virtual void mark();
-    virtual void report(Output::OutputBase &out);
-    virtual void unmark(Queue &queue);
-    virtual void printHead(std::ostream &out) const;
-    virtual ~ConjunctionAccumulateEmpty();
-
-    SConjunctionDomain  conjDom;
-    HeadDefinition      conjDef;
-    ULitVec             auxLits;
-    InstVec             insts;
-};
-
-struct ConjunctionAccumulate : Statement, SolutionCallback {
-    ConjunctionAccumulate(SConjunctionDomain conjDom, ULitVec &&auxLits);
-    virtual bool isNormal() const;
-    virtual void analyze(Dep::Node &node, Dep &dep);
-    virtual void startLinearize(bool active);
-    virtual void linearize(Scripts &scripts, bool positive);
-    virtual void print(std::ostream &out) const;
-    virtual void enqueue(Queue &q);
-    virtual void mark();
-    virtual void report(Output::OutputBase &out);
-    virtual void unmark(Queue &queue);
-    virtual void printHead(std::ostream &out) const;
-    virtual ~ConjunctionAccumulate();
-
-    SConjunctionDomain conjDom;
-    HeadDefinition     conjDef;
-    ULitVec            auxLits;
-    InstVec            insts;
-};
-
-struct ConjunctionAccumulateFact : Statement, SolutionCallback {
-    ConjunctionAccumulateFact(SConjunctionDomain dom, ULitVec &&auxLits);
-    virtual bool isNormal() const;
-    virtual void analyze(Dep::Node &node, Dep &dep);
-    virtual void startLinearize(bool active);
-    virtual void linearize(Scripts &scripts, bool positive);
-    virtual void print(std::ostream &out) const;
-    virtual void enqueue(Queue &q);
-    virtual void mark();
-    virtual void report(Output::OutputBase &out);
-    virtual void unmark(Queue &queue);
-    virtual void printHead(std::ostream &out) const;
-    virtual ~ConjunctionAccumulateFact();
-
-    SConjunctionDomain  conjDom;
-    HeadDefinition      conjDef; 
-    ULitVec             auxLits; // contains just two literals
-    InstVec             insts;
-};
-
-// }}}
-// {{{ declaration of HeadAggregateAccumulate
-
-struct HeadAggregateAccumulate : Statement, SolutionCallback {
-    HeadAggregateAccumulate(SHeadAggregateDomain dom, UTermVec &&tuple, PredicateDomain *predDom, UTerm &&repr, ULitVec &&lits);
-    virtual bool isNormal() const;
-    virtual void analyze(Dep::Node &node, Dep &dep);
-    virtual void startLinearize(bool active);
-    virtual void linearize(Scripts &scripts, bool positive);
-    virtual void print(std::ostream &out) const;
-    virtual void enqueue(Queue &q);
-    virtual void mark();
-    virtual void report(Output::OutputBase &out);
-    virtual void unmark(Queue &queue);
-    virtual void printHead(std::ostream &out) const;
-    virtual ~HeadAggregateAccumulate();
-
-    SHeadAggregateDomain dom;
-    UTermVec             tuple;
-    unsigned             headNum;
-    ULitVec              lits;
-    InstVec              insts;
-};
-
-// }}} 
-// {{{ declaration of DisjunctionAccumulate
-
-struct DisjunctionAccumulate : Statement, SolutionCallback {
-    DisjunctionAccumulate(SDisjunctionDomain dom, PredicateDomain *predDom, UTerm &&repr, ULitVec &&lits);
-    virtual bool isNormal() const;
-    virtual void analyze(Dep::Node &node, Dep &dep);
-    virtual void startLinearize(bool active);
-    virtual void linearize(Scripts &scripts, bool positive);
-    virtual void print(std::ostream &out) const;
-    virtual void enqueue(Queue &q);
-    virtual void mark();
-    virtual void report(Output::OutputBase &out);
-    virtual void unmark(Queue &queue);
-    virtual void printHead(std::ostream &out) const;
-    virtual ~DisjunctionAccumulate();
-
-    SDisjunctionDomain  dom;
-    PredicateDomain    *predDom;
-    UHeadDef            def;
-    ULitVec             lits;
-    InstVec             insts;
-};
-
-// }}} 
-
-// {{{ declaration of HeadAggregateRule
-
-struct HeadAggregateRule : Statement, SolutionCallback {
-    HeadAggregateRule(SHeadAggregateDomain dom, ULitVec &&lits);
-    virtual bool isNormal() const;
-    virtual void analyze(Dep::Node &node, Dep &dep);
-    virtual void startLinearize(bool active);
-    virtual void linearize(Scripts &scripts, bool positive);
-    virtual void print(std::ostream &out) const;
-    virtual void enqueue(Queue &q);
-    virtual void mark();
-    virtual void report(Output::OutputBase &out);
-    virtual void unmark(Queue &queue);
-    virtual void printHead(std::ostream &out) const;
-    virtual ~HeadAggregateRule();
-
-    SHeadAggregateDomain dom;
-    HeadDefinition       def;
-    ULitVec              lits;
-    InstVec              insts;
-};
-
-// }}}
-// {{{ declaration of DisjunctionRule
-
-struct DisjunctionRule : Statement, SolutionCallback {
-    DisjunctionRule(SDisjunctionDomain dom, ULitVec &&lits);
-    virtual bool isNormal() const;
-    virtual void analyze(Dep::Node &node, Dep &dep);
-    virtual void startLinearize(bool active);
-    virtual void linearize(Scripts &scripts, bool positive);
-    virtual void print(std::ostream &out) const;
-    virtual void enqueue(Queue &q);
-    virtual void mark();
-    virtual void report(Output::OutputBase &out);
-    virtual void unmark(Queue &queue);
-    virtual void printHead(std::ostream &out) const;
-    virtual ~DisjunctionRule();
-
-    SDisjunctionDomain dom;
-    HeadDefinition     def;
-    ULitVec            lits;
-    InstVec            insts;
-};
-
-// }}}
-// {{{ declaration of Rule
-
-struct Rule : Statement, SolutionCallback {
-    Rule(PredicateDomain *domain, UTerm &&repr, ULitVec &&body, bool external);
-    virtual bool isNormal() const;
-    virtual void analyze(Dep::Node &node, Dep &dep);
-    virtual void startLinearize(bool active);
-    virtual void linearize(Scripts &scripts, bool positive);
-    virtual void enqueue(Queue &q);
-    virtual void print(std::ostream &out) const;
-    virtual void mark();
-    virtual void report(Output::OutputBase &out);
-    virtual void unmark(Queue &queue);
-    virtual void printHead(std::ostream &out) const;
-
+struct Rule : AbstractStatement {
+    Rule(PredicateDomain *domain, UTerm &&repr, ULitVec &&body, RuleType type);
     virtual ~Rule();
 
-    PredicateDomain* domain; // TODO: should go into defines
-    UHeadDef         defines;
-    ULitVec          lits;
-    InstVec          insts;
-    bool             external;
+    // {{{2 Statement Interface
+    virtual bool isNormal() const;
+    // {{{2 SolutionCallback  interface
+    virtual void printHead(std::ostream &out) const;
+    virtual void report(Output::OutputBase &out);
+    // {{{2 Printable interface
+    virtual void print(std::ostream &out) const;
+    // }}}2
+
+    RuleType type;
 };
 
-// }}}
-// {{{ declaration of WeakConstraint
+// {{{1 declaration of WeakConstraint
 
-struct WeakConstraint : Statement, SolutionCallback {
+struct WeakConstraint : AbstractStatement {
     WeakConstraint(UTermVec &&tuple, ULitVec &&body);
-    virtual bool isNormal() const;
-    virtual void analyze(Dep::Node &node, Dep &dep);
-    virtual void startLinearize(bool active);
-    virtual void linearize(Scripts &scripts, bool positive);
-    virtual void enqueue(Queue &q);
-    virtual void print(std::ostream &out) const;
-    virtual void mark();
-    virtual void report(Output::OutputBase &out);
-    virtual void unmark(Queue &queue);
-    virtual void printHead(std::ostream &out) const;
-
     virtual ~WeakConstraint();
 
+    // {{{2 AbstractStatement interface
+    virtual void collectImportant(Term::VarSet &vars);
+    // {{{2 Printable interface
+    virtual void print(std::ostream &out) const;
+    // {{{2 SolutionCallback  interface
+    virtual void report(Output::OutputBase &out);
+    virtual void printHead(std::ostream &out) const;
+    // }}}2
+
     UTermVec tuple;
-    ULitVec  lits;
-    InstVec  insts;
 };
 
-// }}}
-// {{{ declaration of ExternalRule
+// {{{1 declaration of ExternalRule
 
 struct ExternalRule : Statement {
     ExternalRule();
+    virtual ~ExternalRule();
+
+    // {{{2 Statement Interface
     virtual bool isNormal() const;
     virtual void analyze(Dep::Node &node, Dep &dep);
     virtual void startLinearize(bool active);
     virtual void linearize(Scripts &scripts, bool positive);
     virtual void enqueue(Queue &q);
+    // {{{2 Printable interface
     virtual void print(std::ostream &out) const;
-
-    virtual ~ExternalRule();
+    // }}}2
 
     HeadDefinition defines;
 };
 
-// }}}
+// }}}1
+
+// {{{1 BodyAggregate
+
+// {{{2 declaration of BodyAggregateAccumulate
+
+using Output::BodyAggregateState;
+struct BodyAggregateComplete;
+
+struct BodyAggregateAccumulate : AbstractStatement {
+    BodyAggregateAccumulate(BodyAggregateComplete &complete, UTermVec &&tuple, ULitVec &&lits, ULitVec &&auxLits);
+    virtual ~BodyAggregateAccumulate();
+    // {{{3 AbstractStatement interface
+    void collectImportant(Term::VarSet &vars);
+    // {{{3 Statement interface
+    virtual bool isNormal() const { return true; }
+    // {{{3 SolutionCallback interface
+    void printHead(std::ostream &out) const;
+    void report(Output::OutputBase &out);
+    // }}}3
+    BodyAggregateComplete &complete;
+    UTermVec               tuple;
+};
+
+// {{{2 declaration of BodyAggregateComplete
+
+struct BodyAggregateComplete : Statement, SolutionCallback, BodyOcc {
+    using AccumulateDomainVec = std::vector<std::reference_wrapper<BodyAggregateAccumulate>>;
+    using Domain              = AbstractDomain<BodyAggregateState>;
+    using DomainElement       = Domain::element_type;
+    using TodoVec             = std::vector<std::reference_wrapper<DomainElement>>;
+
+    BodyAggregateComplete(UTerm &&repr, AggregateFunction fun, BoundVec &&bounds);
+    // {{{3 Statement interface
+    virtual bool isNormal() const;                           // return false -> this one creates choices
+    virtual void analyze(Dep::Node &node, Dep &dep);         // use accuDoms to build the dependency...
+    virtual void startLinearize(bool active);                // noop because single instantiator
+    virtual void linearize(Scripts &scripts, bool positive); // noop because single instantiator
+    virtual void enqueue(Queue &q);                          // enqueue the single instantiator
+    // {{{3 SolutionCallback  interface
+    virtual void printHead(std::ostream &out) const;         // #complete { h1, ..., hn }
+    virtual void propagate(Queue &queue);                    // enqueue based on accuDoms
+    virtual void report(Output::OutputBase &out);            // loop over headDom here
+    // {{{3 Printable interface
+    virtual void print(std::ostream &out) const;             // #complete { h1, ..., hn } :- accu1,... , accun.
+    // {{{3 BodyOcc interface
+    virtual UGTerm getRepr() const;
+    virtual bool isPositive() const;
+    virtual bool isNegative() const;
+    virtual void setType(OccurrenceType x);
+    virtual OccurrenceType getType() const;
+    virtual DefinedBy &definedBy();
+    virtual void checkDefined(LocSet &done, SigSet const &edb, UndefVec &undef) const;
+    virtual ~BodyAggregateComplete();
+    // }}}3
+
+    AccumulateDomainVec accuDoms;
+    Domain              domain;
+    HeadDefinition      def;
+    UTerm               accuRepr;
+    AggregateFunction   fun;
+    BoundVec            bounds;
+    TodoVec             todo;
+    OccurrenceType      occType      = OccurrenceType::STRATIFIED;
+    DefinedBy           defBy;
+    Instantiator        inst;
+
+    bool                positive     = true; // what with this one ...
+};
+
+// {{{2 declaration of BodyAggregateLiteral
+
+struct BodyAggregateLiteral : Literal, BodyOcc {
+    using DomainElement = BodyAggregateComplete::DomainElement;
+
+    // {{{3 (De)Constructors
+    BodyAggregateLiteral(BodyAggregateComplete &complete, NAF naf);
+    virtual ~BodyAggregateLiteral();
+    // {{{3 Printable interface
+    virtual void print(std::ostream &out) const;
+    // {{{3 Literal interface
+    virtual UIdx index(Scripts &scripts, BinderType type, Term::VarSet &bound);
+    virtual bool isRecursive() const;
+    virtual BodyOcc *occurrence();
+    virtual void collect(VarTermBoundVec &vars) const;
+    virtual Score score(Term::VarSet const &bound);
+    virtual Output::Literal *toOutput();
+    // {{{3 BodyOcc interface
+    virtual DefinedBy &definedBy();
+    virtual UGTerm getRepr() const;
+    virtual bool isPositive() const;
+    virtual bool isNegative() const;
+    virtual void setType(OccurrenceType x);
+    virtual OccurrenceType getType() const;
+    virtual void checkDefined(LocSet &done, SigSet const &edb, UndefVec &) const;
+    // }}}3
+
+    BodyAggregateComplete &complete;
+    DefinedBy              defs;
+    Output::BodyAggregate  gLit;
+    OccurrenceType         type   = OccurrenceType::POSITIVELY_STRATIFIED;
+};
+
+// }}}2
+
+// {{{1 AssignmentAggregate
+
+// {{{2 declaration of AssignmentAggregateAccumulate
+
+using Output::AssignmentAggregateState;
+struct AssignmentAggregateComplete;
+
+struct AssignmentAggregateAccumulate : AbstractStatement {
+    AssignmentAggregateAccumulate(AssignmentAggregateComplete &complete, UTermVec &&tuple, ULitVec &&lits, ULitVec &&auxLits);
+    virtual ~AssignmentAggregateAccumulate();
+    // {{{3 AbstractStatement interface
+    void collectImportant(Term::VarSet &vars);
+    // {{{3 Statement interface
+    virtual bool isNormal() const { return true; }
+    // {{{3 SolutionCallback interface
+    void printHead(std::ostream &out) const;
+    void report(Output::OutputBase &out);
+    // }}}3
+
+    AssignmentAggregateComplete &complete;
+    UTermVec               tuple;
+};
+
+// {{{2 declaration of AssignmentAggregateComplete
+
+struct AssignmentAggregateComplete : Statement, SolutionCallback, BodyOcc {
+    using AccumulateDomainVec = std::vector<std::reference_wrapper<AssignmentAggregateAccumulate>>;
+    using StateDataMap        = std::unordered_map<Value, AssignmentAggregateState::Data>;
+    using Domain              = AbstractDomain<AssignmentAggregateState>;
+    using TodoVec             = std::vector<std::reference_wrapper<StateDataMap::value_type>>;
+    using DomainElement       = Domain::element_type;
+
+    AssignmentAggregateComplete(UTerm &&repr, UTerm &&dataRepr, AggregateFunction fun);
+    // {{{3 Statement interface
+    virtual bool isNormal() const;                           // return false -> this one creates choices
+    virtual void analyze(Dep::Node &node, Dep &dep);         // use accuDoms to build the dependency...
+    virtual void startLinearize(bool active);                // noop because single instantiator
+    virtual void linearize(Scripts &scripts, bool positive); // noop because single instantiator
+    virtual void enqueue(Queue &q);                          // enqueue the single instantiator
+    // {{{3 SolutionCallback  interface
+    virtual void printHead(std::ostream &out) const;         // #complete { h1, ..., hn }
+    virtual void propagate(Queue &queue);                    // enqueue based on accuDoms
+    virtual void report(Output::OutputBase &out);            // loop over headDom here
+    // {{{3 Printable interface
+    virtual void print(std::ostream &out) const;             // #complete { h1, ..., hn } :- accu1,... , accun.
+    // {{{3 BodyOcc interface
+    virtual UGTerm getRepr() const;
+    virtual bool isPositive() const;
+    virtual bool isNegative() const;
+    virtual void setType(OccurrenceType x);
+    virtual OccurrenceType getType() const;
+    virtual DefinedBy &definedBy();
+    virtual void checkDefined(LocSet &done, SigSet const &edb, UndefVec &undef) const;
+    virtual ~AssignmentAggregateComplete();
+    // }}}3
+
+    void insert_(ValVec const &values, StateDataMap::value_type &x);
+
+    AccumulateDomainVec accuDoms;
+    StateDataMap        data;
+    Domain              domain;
+    HeadDefinition      def;
+    UTerm               dataRepr;
+    AggregateFunction   fun;
+    TodoVec             todo;
+    OccurrenceType      occType    = OccurrenceType::STRATIFIED;
+    DefinedBy           defBy;
+    Instantiator        inst;
+};
+
+// {{{2 declaration of AssignmentAggregateLiteral
+
+struct AssignmentAggregateLiteral : Literal, BodyOcc {
+    using DomainElement = AssignmentAggregateComplete::DomainElement;
+
+    AssignmentAggregateLiteral(AssignmentAggregateComplete &complete);
+    virtual ~AssignmentAggregateLiteral();
+    // {{{3 Printable interface
+    virtual void print(std::ostream &out) const;
+    // {{{3 Literal interface
+    virtual UIdx index(Scripts &scripts, BinderType type, Term::VarSet &bound);
+    virtual bool isRecursive() const;
+    virtual BodyOcc *occurrence();
+    virtual void collect(VarTermBoundVec &vars) const;
+    virtual Score score(Term::VarSet const &bound);
+    virtual Output::Literal *toOutput();
+    // {{{3 BodyOcc interface
+    virtual DefinedBy &definedBy();
+    virtual UGTerm getRepr() const;
+    virtual bool isPositive() const;
+    virtual bool isNegative() const;
+    virtual void setType(OccurrenceType x);
+    virtual OccurrenceType getType() const;
+    virtual void checkDefined(LocSet &done, SigSet const &edb, UndefVec &) const;
+    // }}}3
+
+    AssignmentAggregateComplete &complete;
+    DefinedBy                   defs;
+    Output::AssignmentAggregate gLit;
+    OccurrenceType              type   = OccurrenceType::POSITIVELY_STRATIFIED;
+};
+
+// }}}2
+
+// {{{1 Conjunction
+
+// The following classes correspond to the rules indicated below.
+// empty       :- body.        % to handle the empty case
+// accu        :- empty, cond. % accumulation of conditon (blocks if condition is a fact and no head available yet)
+// accu        :- empty, head. % accumulation of head (blocks if no condition available yet, unblocks if there is a head and the condition is fact)
+// aggr        :- accu.        % complete rule (let's through unblocked conjunctions)
+// head        :- aggr, body.  % literal
+
+using Output::ConjunctionState;
+struct ConjunctionComplete;
+
+// {{{2 declaration of ConjunctionAccumulateEmpty
+
+struct ConjunctionAccumulateEmpty : AbstractStatement {
+    ConjunctionAccumulateEmpty(ConjunctionComplete &complete, ULitVec &&auxLits);
+    virtual ~ConjunctionAccumulateEmpty();
+    // {{{3 Statement interface
+    virtual bool isNormal() const;
+    // {{{3 SolutionCallback interface
+    void report(Output::OutputBase &out);
+    // }}}3
+
+    ConjunctionComplete &complete;
+};
+
+// {{{2 declaration of ConjunctionAccumulateCond
+
+struct ConjunctionAccumulateCond : AbstractStatement {
+    ConjunctionAccumulateCond(ConjunctionComplete &complete, ULitVec &&lits);
+    virtual ~ConjunctionAccumulateCond();
+    // {{{3 Statement interface
+    virtual bool isNormal() const;
+    virtual void linearize(Scripts &scripts, bool positive);
+    // {{{3 SolutionCallback  interface
+    virtual void report(Output::OutputBase &out);
+    // }}}3
+
+    ConjunctionComplete &complete;
+};
+
+// {{{2 declaration of ConjunctionAccumulateHead
+
+struct ConjunctionAccumulateHead : AbstractStatement {
+    ConjunctionAccumulateHead(ConjunctionComplete &complete, ULitVec &&lits);
+    virtual ~ConjunctionAccumulateHead();
+    // {{{3 Statement interface
+    virtual bool isNormal() const;
+    // {{{3 SolutionCallback  interface
+    virtual void report(Output::OutputBase &out);
+    // }}}3
+
+    ConjunctionComplete &complete;
+};
+
+// {{{2 declaration of ConjunctionComplete
+
+struct ConjunctionComplete : Statement, SolutionCallback, BodyOcc {
+    using Domain = AbstractDomain<ConjunctionState>;
+    using DomainElement = Domain::element_type;
+    using TodoVec = std::vector<std::reference_wrapper<DomainElement>>;
+
+    ConjunctionComplete(UTerm &&repr, UTermVec &&local);
+    UTerm condRepr() const;
+    UTerm headRepr() const;
+    UTerm accuRepr() const;
+    UTerm emptyRepr() const;
+    // {{{3 Statement interface
+    virtual bool isNormal() const;
+    virtual void analyze(Dep::Node &node, Dep &dep);
+    virtual void startLinearize(bool active);
+    virtual void linearize(Scripts &scripts, bool positive);
+    virtual void enqueue(Queue &q);
+    // {{{3 SolutionCallback  interfac
+    virtual void printHead(std::ostream &out) const;
+    virtual void propagate(Queue &queue);
+    virtual void report(Output::OutputBase &out);
+    virtual unsigned priority() const { return 1; }
+    // {{{3 Printable interface
+    virtual void print(std::ostream &out) const;
+    // {{{3 BodyOcc interface
+    virtual UGTerm getRepr() const;
+    virtual bool isPositive() const;
+    virtual bool isNegative() const;
+    virtual void setType(OccurrenceType x);
+    virtual OccurrenceType getType() const;
+    virtual DefinedBy &definedBy();
+    virtual void checkDefined(LocSet &done, SigSet const &edb, UndefVec &undef) const;
+    // }}}3
+    virtual ~ConjunctionComplete();
+
+    Domain dom;         // condtional literal
+    PredicateDomain domEmpty;
+    PredicateDomain domCond;
+    HeadDefinition def; // condtional literal
+    OccurrenceType occType = OccurrenceType::STRATIFIED;
+    DefinedBy defBy;
+    Instantiator inst;  // dummy instantiator
+    TodoVec todo;       // contains literals that might have to be exported
+    UTermVec local;     // local variables in condition
+    bool condRecursive = false;
+};
+
+// {{{2 declaration of ConjunctionLiteral
+
+struct ConjunctionLiteral : Literal, BodyOcc {
+    using DomainElement = ConjunctionComplete::DomainElement;
+
+    ConjunctionLiteral(ConjunctionComplete &complete);
+    virtual ~ConjunctionLiteral();
+    // {{{3 Printable interface
+    virtual void print(std::ostream &out) const;
+    // {{{3 Literal interface
+    virtual UIdx index(Scripts &scripts, BinderType type, Term::VarSet &bound);
+    virtual bool isRecursive() const;
+    virtual BodyOcc *occurrence();
+    virtual void collect(VarTermBoundVec &vars) const;
+    virtual Score score(Term::VarSet const &bound);
+    virtual Output::Literal *toOutput();
+    // {{{3 BodyOcc interface
+    virtual DefinedBy &definedBy();
+    virtual UGTerm getRepr() const;
+    virtual bool isPositive() const;
+    virtual bool isNegative() const;
+    virtual void setType(OccurrenceType x);
+    virtual OccurrenceType getType() const;
+    virtual void checkDefined(LocSet &done, SigSet const &edb, UndefVec &) const;
+    // }}}3
+
+    ConjunctionComplete &complete;
+    DefinedBy            defs;
+    Output::Conjunction  gLit;
+    OccurrenceType       type   = OccurrenceType::POSITIVELY_STRATIFIED;
+};
+// }}}2
+
+// {{{1 Disjoint
+
+// {{{2 declaration of DisjointAccumulate
+
+using Output::DisjointState;
+struct DisjointComplete;
+
+struct DisjointAccumulate : AbstractStatement {
+    DisjointAccumulate(DisjointComplete &complete, ULitVec &&lits, ULitVec &&auxLits);
+    DisjointAccumulate(DisjointComplete &complete, UTermVec &&tuple, CSPAddTerm &&value, ULitVec &&lits, ULitVec &&auxLits);
+    virtual ~DisjointAccumulate();
+    // {{{3 AbstractStatement interface
+    void collectImportant(Term::VarSet &vars);
+    // {{{3 Statement interface
+    virtual bool isNormal() const { return true; }
+    // {{{3 SolutionCallback interface
+    void printHead(std::ostream &out) const;
+    void report(Output::OutputBase &out);
+    // }}}3
+
+    DisjointComplete &complete;
+    UTermVec          tuple;
+    CSPAddTerm        value;
+    bool              neutral   = true;
+};
+
+// {{{2 declaration of DisjointComplete
+
+struct DisjointComplete : Statement, SolutionCallback, BodyOcc {
+    using AccumulateDomainVec = std::vector<std::reference_wrapper<DisjointAccumulate>>;
+    using Domain              = AbstractDomain<DisjointState>;
+    using DomainElement       = Domain::element_type;
+    using TodoVec             = std::vector<std::reference_wrapper<DomainElement>>;
+
+    DisjointComplete(UTerm &&repr);
+    // {{{3 Statement interface
+    virtual bool isNormal() const;
+    virtual void analyze(Dep::Node &node, Dep &dep);
+    virtual void startLinearize(bool active);
+    virtual void linearize(Scripts &scripts, bool positive);
+    virtual void enqueue(Queue &q);
+    // {{{3 SolutionCallback  interface
+    virtual void printHead(std::ostream &out) const;         // #complete { h1, ..., hn }
+    virtual void propagate(Queue &queue);                    // enqueue based on accuDoms
+    virtual void report(Output::OutputBase &out);            // loop over headDom here
+    // {{{3 Printable interface
+    virtual void print(std::ostream &out) const;             // #complete { h1, ..., hn } :- accu1,... , accun.
+    // {{{3 BodyOcc interface
+    virtual UGTerm getRepr() const;
+    virtual bool isPositive() const;
+    virtual bool isNegative() const;
+    virtual void setType(OccurrenceType x);
+    virtual OccurrenceType getType() const;
+    virtual DefinedBy &definedBy();
+    virtual void checkDefined(LocSet &done, SigSet const &edb, UndefVec &undef) const;
+    virtual ~DisjointComplete();
+    // }}}3
+
+    AccumulateDomainVec accuDoms;
+    Domain              domain;
+    HeadDefinition      def;
+    UTerm               accuRepr;
+    TodoVec             todo;
+    OccurrenceType      occType = OccurrenceType::STRATIFIED;
+    DefinedBy           defBy;
+    Instantiator        inst;
+};
+
+// {{{2 declaration of DisjointLiteral
+
+struct DisjointLiteral : Literal, BodyOcc {
+    using DomainElement = DisjointComplete::DomainElement;
+
+    DisjointLiteral(DisjointComplete &complete, NAF naf);
+    virtual ~DisjointLiteral();
+    // {{{3 Printable interface
+    virtual void print(std::ostream &out) const;
+    // {{{3 Literal interface
+    virtual UIdx index(Scripts &scripts, BinderType type, Term::VarSet &bound);
+    virtual bool isRecursive() const;
+    virtual BodyOcc *occurrence();
+    virtual void collect(VarTermBoundVec &vars) const;
+    virtual Score score(Term::VarSet const &bound);
+    virtual Output::Literal *toOutput();
+    // {{{3 BodyOcc interface
+    virtual DefinedBy &definedBy();
+    virtual UGTerm getRepr() const;
+    virtual bool isPositive() const;
+    virtual bool isNegative() const;
+    virtual void setType(OccurrenceType x);
+    virtual OccurrenceType getType() const;
+    virtual void checkDefined(LocSet &done, SigSet const &edb, UndefVec &) const;
+    // }}}3
+
+    DisjointComplete        &complete;
+    DefinedBy               defs;
+    Output::DisjointLiteral gLit;
+    OccurrenceType          type   = OccurrenceType::POSITIVELY_STRATIFIED;
+};
+
+// }}}2
+
+// }}}1
+
+// {{{1 HeadAggregate
+
+// {{{2 declaration of HeadAggregateRule
+
+using Output::HeadAggregateState;
+
+struct HeadAggregateRule : AbstractStatement {
+    using Domain        = AbstractDomain<HeadAggregateState>;
+    using DomainElement = Domain::element_type;
+    using TodoVec       = std::vector<std::reference_wrapper<HeadAggregateState>>;
+    // {{{3 (De)Constructors
+    HeadAggregateRule(UTerm &&repr, AggregateFunction fun, BoundVec &&bounds, ULitVec &&lits);
+    virtual ~HeadAggregateRule();
+    // {{{3 Printable interface
+    void print(std::ostream &out) const;
+    // {{{3 SolutionCallback interface
+    void report(Output::OutputBase &out);
+    // }}}3
+    
+    Domain              domain;
+    AggregateFunction   fun;
+    BoundVec            bounds;
+    TodoVec             todo;
+};
+
+// {{{2 declaration of HeadAggregateLiteral
+
+struct HeadAggregateLiteral : Literal, BodyOcc {
+    using DomainElement = HeadAggregateRule::DomainElement;
+    // {{{3 (De)Constructors
+    HeadAggregateLiteral(HeadAggregateRule &headRule);
+    virtual ~HeadAggregateLiteral();
+    // {{{3 Printable interface
+    virtual void print(std::ostream &out) const;
+    // {{{3 Literal interface
+    virtual UIdx index(Scripts &scripts, BinderType type, Term::VarSet &bound);
+    virtual bool isRecursive() const;
+    virtual BodyOcc *occurrence();
+    virtual void collect(VarTermBoundVec &vars) const;
+    virtual Score score(Term::VarSet const &bound);
+    virtual Output::Literal *toOutput();
+    // {{{3 BodyOcc interface
+    virtual DefinedBy &definedBy();
+    virtual UGTerm getRepr() const;
+    virtual bool isPositive() const;
+    virtual bool isNegative() const;
+    virtual void setType(OccurrenceType x);
+    virtual OccurrenceType getType() const;
+    virtual void checkDefined(LocSet &done, SigSet const &edb, UndefVec &) const;
+    // }}}3
+
+    HeadAggregateRule   &headRule;
+    DefinedBy            defs;
+    DomainElement       *gResult = nullptr;
+    OccurrenceType       type = OccurrenceType::POSITIVELY_STRATIFIED;
+};
+
+// {{{2 declaration of HeadAggregateAccumulate
+
+struct HeadAggregateAccumulate : AbstractStatement {
+    HeadAggregateAccumulate(HeadAggregateRule &headRule, unsigned elemIndex, UTermVec &&tuple, PredicateDomain *predDom, UTerm &&predRepr, ULitVec &&lits);
+    virtual ~HeadAggregateAccumulate();
+    // {{{3 AbstractStatement interface
+    void collectImportant(Term::VarSet &vars);
+    // {{{3 SolutionCallback interface
+    void printHead(std::ostream &out) const;
+    void report(Output::OutputBase &out);
+    // }}}3
+
+    UHeadDef           predDef;
+    HeadAggregateRule &headRule;
+    unsigned           elemIndex;
+    UTermVec           tuple;
+};
+
+// {{{2 declaration of HeadAggregateComplete
+
+struct HeadAggregateComplete : Statement, SolutionCallback, BodyOcc {
+    using AccumulateDomainVec = std::vector<std::reference_wrapper<HeadAggregateAccumulate>>;
+
+    HeadAggregateComplete(HeadAggregateRule &headRule);
+    // {{{3 Statement interface
+    virtual bool isNormal() const;                           // return false -> this one creates choices
+    virtual void analyze(Dep::Node &node, Dep &dep);         // use accuDoms to build the dependency...
+    virtual void startLinearize(bool active);                // noop because single instantiator
+    virtual void linearize(Scripts &scripts, bool positive); // noop because single instantiator
+    virtual void enqueue(Queue &q);                          // enqueue the single instantiator
+    // {{{3 SolutionCallback  interface
+    virtual void printHead(std::ostream &out) const;         // #complete { h1, ..., hn }
+    virtual void propagate(Queue &queue);                    // enqueue based on accuDoms
+    virtual void report(Output::OutputBase &out);            // loop over headDom here
+    // {{{3 Printable interface
+    virtual void print(std::ostream &out) const;             // #complete { h1, ..., hn } :- accu1,... , accun.
+    // {{{3 BodyOcc interface
+    virtual UGTerm getRepr() const;
+    virtual bool isPositive() const;
+    virtual bool isNegative() const;
+    virtual void setType(OccurrenceType x);
+    virtual OccurrenceType getType() const;
+    virtual DefinedBy &definedBy();
+    virtual void checkDefined(LocSet &done, SigSet const &edb, UndefVec &undef) const;
+    virtual ~HeadAggregateComplete();
+    // }}}3
+
+    HeadAggregateRule   &headRule;
+    UTerm                completeRepr;
+    AccumulateDomainVec  accuDoms;
+    Instantiator         inst;
+    OccurrenceType       occType = OccurrenceType::STRATIFIED;
+    DefinedBy            defBy;
+};
+
+// }}}2
+
+// {{{1 Disjunction
+
+using Output::DisjunctionState;
+
+// {{{2 declaration of DisjunctionComplete
+
+struct DisjunctionComplete : Statement, SolutionCallback, BodyOcc {
+    using Domain = std::unordered_map<Value, DisjunctionState>;
+    using TodoVec = std::vector<std::reference_wrapper<DisjunctionState>>;
+    using TodoHeadVec = std::vector<std::tuple<int, Gringo::Output::DisjunctionElement &, Value, Output::ULitVec>>;
+    using HeadVec = std::vector<HeadDefinition>;
+    using LocalVec = std::vector<UTermVec>;
+
+    DisjunctionComplete(UTerm &&repr);
+    UTerm condRepr(unsigned elemIndex) const;
+    UTerm headRepr(unsigned elemIndex, int headIndex) const;
+    UTerm accuRepr() const;
+    UTerm emptyRepr() const;
+    void appendLocal(UTermVec &&local);
+    void appendHead(PredicateDomain &headDom, UTerm &&headRepr);
+    // {{{3 Statement interface
+    virtual bool isNormal() const;                           // return false -> this one creates choices
+    virtual void analyze(Dep::Node &node, Dep &dep);         // use accuDoms to build the dependency...
+    virtual void startLinearize(bool active);                // noop because single instantiator
+    virtual void linearize(Scripts &scripts, bool positive); // noop because single instantiator
+    virtual void enqueue(Queue &q);                          // enqueue the single instantiator
+    // {{{3 SolutionCallback  interface
+    virtual void printHead(std::ostream &out) const;         // #complete { h1, ..., hn }
+    virtual void propagate(Queue &queue);                    // enqueue based on accuDoms
+    virtual void report(Output::OutputBase &out);            // loop over headDom here
+    virtual unsigned priority() const { return 1; }
+    // {{{3 Printable interface
+    virtual void print(std::ostream &out) const;             // #complete { h1, ..., hn } :- accu1,... , accun.
+    // {{{3 BodyOcc interface
+    virtual UGTerm getRepr() const;
+    virtual bool isPositive() const;
+    virtual bool isNegative() const;
+    virtual void setType(OccurrenceType x);
+    virtual OccurrenceType getType() const;
+    virtual DefinedBy &definedBy();
+    virtual void checkDefined(LocSet &done, SigSet const &edb, UndefVec &undef) const;
+    // }}}3
+    virtual ~DisjunctionComplete();
+
+    Domain dom;
+    UTerm repr;
+    PredicateDomain domEmpty;
+    PredicateDomain domCond;
+    OccurrenceType occType = OccurrenceType::STRATIFIED;
+    DefinedBy defBy;
+    Instantiator inst;  // dummy instantiator
+    TodoVec todo;       // contains literals that might have to be exported
+    TodoHeadVec todoHead;
+    LocalVec locals;
+    HeadVec heads;
+};
+
+// {{{2 declaration of DisjunctionRule
+
+struct DisjunctionRule : AbstractStatement {
+    DisjunctionRule(DisjunctionComplete &complete, ULitVec &&lits);
+    virtual ~DisjunctionRule();
+    // {{{3 Statement interface
+    virtual bool isNormal() const;
+    // {{{3 SolutionCallback interface
+    void report(Output::OutputBase &out);
+    // }}}3
+
+    DisjunctionComplete &complete;
+};
+
+// {{{2 declaration of DisjunctionAccumulateCond
+
+struct DisjunctionAccumulateCond : AbstractStatement {
+    DisjunctionAccumulateCond(DisjunctionComplete &complete, unsigned elemIndex, ULitVec &&lits);
+    virtual ~DisjunctionAccumulateCond(); 
+    // {{{3 SolutionCallback interface
+    void report(Output::OutputBase &out);
+    // }}}3
+
+    DisjunctionComplete &complete;
+};
+
+// {{{2 declaration of DisjunctionAccumulateHead
+
+struct DisjunctionAccumulateHead : AbstractStatement {
+    DisjunctionAccumulateHead(DisjunctionComplete &complete, unsigned elemIndex, int headIndex, ULitVec &&lits);
+    virtual ~DisjunctionAccumulateHead(); 
+    // {{{3 SolutionCallback interface
+    void report(Output::OutputBase &out);
+    // }}}3
+
+    DisjunctionComplete &complete;
+    int headIndex;
+};
+
+// }}}2
+
+/*
+// {{{2 declaration of DisjunctionLiteral
+
+struct DisjunctionLiteral : Literal, BodyOcc {
+    using DomainElement = DisjunctionComplete::DomainElement;
+
+    // {{{3 (De)Constructors
+    DisjunctionLiteral(DisjunctionComplete &complete);
+    virtual ~DisjunctionLiteral();
+    // {{{3 Printable interface
+    virtual void print(std::ostream &out) const;
+    // {{{3 Literal interface
+    virtual UIdx index(Scripts &scripts, BinderType type, Term::VarSet &bound);
+    virtual bool isRecursive() const;
+    virtual BodyOcc *occurrence();
+    virtual void collect(VarTermBoundVec &vars) const;
+    virtual Score score(Term::VarSet const &bound);
+    virtual Output::Literal *toOutput();
+    // {{{3 BodyOcc interface
+    virtual DefinedBy &definedBy();
+    virtual UGTerm getRepr() const;
+    virtual bool isPositive() const;
+    virtual bool isNegative() const;
+    virtual void setType(OccurrenceType x);
+    virtual OccurrenceType getType() const;
+    virtual void checkDefined(LocSet &done, SigSet const &edb, UndefVec &) const;
+    // }}}3
+
+    ConjunctionComplete &complete;
+    DisjunctionRule     &headRule;
+    DefinedBy            defs;
+    DomainElement       *gResult = nullptr;
+    OccurrenceType       type = OccurrenceType::POSITIVELY_STRATIFIED;
+};
+
+// }}}2
+*/
+
+// }}}1
 
 } } // namespace Ground Gringo
 
 #endif // _GRINGO_GROUND_STATEMENTS_HH
-

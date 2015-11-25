@@ -49,8 +49,8 @@ Projections::ProjectionMap::iterator Projections::end() {
 }
 
 UTerm Projections::add(Term &term) {
-    unsigned projectNum(0);
-    auto ret(term.project(true, projectNum));
+    AuxGen gen;
+    auto ret(term.project(true, gen));
     proj.emplace_back(std::move(std::get<1>(ret)), std::move(std::get<2>(ret)));
     return std::move(std::get<0>(ret));
 }

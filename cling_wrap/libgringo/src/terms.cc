@@ -31,14 +31,14 @@ CSPRelTerm::CSPRelTerm(Relation rel, CSPAddTerm &&term)
     : rel(rel)
     , term(std::move(term)) { }
 
-void CSPRelTerm::collect(VarTermBoundVec &vars) const                                      { term.collect(vars); }
-void CSPRelTerm::collect(VarTermSet &vars) const                                           { term.collect(vars); }
-void CSPRelTerm::replace(Defines &x)                                                       { term.replace(x); }
-bool CSPRelTerm::operator==(CSPRelTerm const &x) const                                     { return rel == x.rel && term == x.term; }
-void CSPRelTerm::simplify(Term::DotsMap &dots, Term::ScriptMap &scripts, unsigned &auxNum) { term.simplify(dots, scripts, auxNum); }
-void CSPRelTerm::rewriteArithmetics(Term::ArithmeticsMap &arith, unsigned &auxNum)         { term.rewriteArithmetics(arith, auxNum); }
-size_t CSPRelTerm::hash() const                                                            { return get_value_hash(size_t(rel), term); }
-bool CSPRelTerm::hasPool() const                                                           { return term.hasPool(); }
+void CSPRelTerm::collect(VarTermBoundVec &vars) const                            { term.collect(vars); }
+void CSPRelTerm::collect(VarTermSet &vars) const                                 { term.collect(vars); }
+void CSPRelTerm::replace(Defines &x)                                             { term.replace(x); }
+bool CSPRelTerm::operator==(CSPRelTerm const &x) const                           { return rel == x.rel && term == x.term; }
+bool CSPRelTerm::simplify(SimplifyState &state)                                  { return term.simplify(state); }
+void CSPRelTerm::rewriteArithmetics(Term::ArithmeticsMap &arith, AuxGen &auxGen) { term.rewriteArithmetics(arith, auxGen); }
+size_t CSPRelTerm::hash() const                                                  { return get_value_hash(size_t(rel), term); }
+bool CSPRelTerm::hasPool() const                                                 { return term.hasPool(); }
 std::vector<CSPRelTerm> CSPRelTerm::unpool() const {
     std::vector<CSPRelTerm> ret;
     for (auto &x : term.unpool()) { ret.emplace_back(rel, std::move(x)); }
@@ -74,11 +74,14 @@ void CSPAddTerm::replace(Defines &x) {
     for (auto &y : terms) { y.replace(x); }
 }
 bool CSPAddTerm::operator==(CSPAddTerm const &x) const { return is_value_equal_to(terms, x.terms); }
-void CSPAddTerm::simplify(Term::DotsMap &dots, Term::ScriptMap &scripts, unsigned &auxNum) {
-    for (auto &y : terms) { y.simplify(dots, scripts, auxNum); }
+bool CSPAddTerm::simplify(SimplifyState &state) {
+    for (auto &y : terms) { 
+        if (!y.simplify(state)) { return false; }
+    }
+    return true;
 }
-void CSPAddTerm::rewriteArithmetics(Term::ArithmeticsMap &arith, unsigned &auxNum) { 
-    for (auto &x : terms) { x.rewriteArithmetics(arith, auxNum); }
+void CSPAddTerm::rewriteArithmetics(Term::ArithmeticsMap &arith, AuxGen &auxGen) { 
+    for (auto &x : terms) { x.rewriteArithmetics(arith, auxGen); }
 }
 size_t CSPAddTerm::hash() const { return get_value_hash(terms); }
 bool CSPAddTerm::hasPool() const { 
@@ -94,14 +97,30 @@ std::vector<CSPAddTerm> CSPAddTerm::unpool() const {
     return x;
 }
 void CSPAddTerm::toGround(CSPGroundLit &ground, bool invert) const {
+    bool undefined = false;
     for (auto &x : terms) {
-        int coe = toNum(x.coe);
+        int coe = x.coe->toNum(undefined);
         if (coe != 0) {
-            if (x.var) { std::get<1>(ground).emplace_back(invert ? -coe : coe, x.var->eval()); }
+            if (x.var) { std::get<1>(ground).emplace_back(invert ? -coe : coe, x.var->eval(undefined)); }
             else       { std::get<2>(ground) = eval(invert ? BinOp::ADD : BinOp::SUB, std::get<2>(ground), coe); }
         }
     }
+    assert(!undefined);
 }
+
+bool CSPAddTerm::checkEval() const {
+    for (auto &x : terms) {
+        bool undefined = false;
+        x.coe->toNum(undefined);
+        if (undefined) { return false; }
+        if (x.var) {
+            x.var->eval(undefined);
+            if (undefined) { return false; }
+        }
+    }
+    return true;
+}
+
 CSPAddTerm::~CSPAddTerm() { }
 std::ostream &operator<<(std::ostream &out, CSPAddTerm const &x) {
     print_comma(out, x.terms, "$+");
@@ -137,13 +156,13 @@ bool CSPMulTerm::operator==(CSPMulTerm const &x) const {
     if (var && x.var) { return is_value_equal_to(var, x.var) && is_value_equal_to(coe, x.coe); }
     else { return !var && !x.var && is_value_equal_to(coe, x.coe); }
 }
-void CSPMulTerm::simplify(Term::DotsMap &dots, Term::ScriptMap &scripts, unsigned &auxNum) {
-    if (var) { var->simplify(dots, scripts, auxNum, false, false).update(var); }
-    coe->simplify(dots, scripts, auxNum, false, false).update(coe);
+bool CSPMulTerm::simplify(SimplifyState &state) {
+    if (var && var->simplify(state, false, false).update(var).undefined()) { return false;}
+    return !coe->simplify(state, false, false).update(coe).undefined();
 }
-void CSPMulTerm::rewriteArithmetics(Term::ArithmeticsMap &arith, unsigned &auxNum) { 
-    if (var) { Term::replace(var, var->rewriteArithmetics(arith, auxNum)); }
-    Term::replace(coe, coe->rewriteArithmetics(arith, auxNum));
+void CSPMulTerm::rewriteArithmetics(Term::ArithmeticsMap &arith, AuxGen &auxGen) { 
+    if (var) { Term::replace(var, var->rewriteArithmetics(arith, auxGen)); }
+    Term::replace(coe, coe->rewriteArithmetics(arith, auxGen));
 }
 size_t CSPMulTerm::hash() const { 
     if (var) { return get_value_hash(var, coe); }

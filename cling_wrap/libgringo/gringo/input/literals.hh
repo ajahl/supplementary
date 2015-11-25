@@ -30,14 +30,15 @@ namespace Gringo { namespace Input {
 
 struct PredicateLiteral : Literal {
     PredicateLiteral(NAF naf, UTerm &&repr);
+    virtual unsigned projectScore() const;
     virtual void collect(VarTermBoundVec &vars, bool bound) const;
     virtual void toTuple(UTermVec &tuple, int &id);
     virtual PredicateLiteral *clone() const;
     virtual void print(std::ostream &out) const;
     virtual bool operator==(Literal const &other) const;
     virtual size_t hash() const;
-    virtual void simplify(Projections &project, Term::DotsMap &dots, Term::ScriptMap &scripts, unsigned &auxNum, bool positional = true);
-    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, AssignVec &assign, unsigned &auxNum);
+    virtual bool simplify(Projections &project, SimplifyState &state, bool positional = true, bool singleton = false);
+    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, AssignVec &assign, AuxGen &auxGen);
     virtual ULitVec unpool(bool beforeRewrite) const;
     virtual Value isEDB() const;
     virtual bool hasPool(bool beforeRewrite) const;
@@ -58,6 +59,7 @@ struct ProjectionLiteral : PredicateLiteral {
     virtual Ground::ULit toGround(PredDomMap &x) const;
     virtual ULit shift(bool negate);
     virtual ~ProjectionLiteral();
+    mutable bool initialized_;
 };
 
 // }}}
@@ -65,14 +67,15 @@ struct ProjectionLiteral : PredicateLiteral {
 
 struct RelationLiteral : Literal {
     RelationLiteral(Relation rel, UTerm &&left, UTerm &&right);
+    virtual unsigned projectScore() const;
     virtual void collect(VarTermBoundVec &vars, bool bound) const;
     virtual void toTuple(UTermVec &tuple, int &id);
     virtual RelationLiteral *clone() const;
     virtual void print(std::ostream &out) const;
     virtual bool operator==(Literal const &other) const;
     virtual size_t hash() const;
-    virtual void simplify(Projections &project, Term::DotsMap &dots, Term::ScriptMap &scripts, unsigned &auxNum, bool positional = true);
-    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, AssignVec &assign, unsigned &auxNum);
+    virtual bool simplify(Projections &project, SimplifyState &state, bool positional = true, bool singleton = false);
+    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, AssignVec &assign, AuxGen &auxGen);
     virtual ULitVec unpool(bool beforeRewrite) const;
     virtual bool hasPool(bool beforeRewrite) const;
     virtual void replace(Defines &dx);
@@ -99,8 +102,8 @@ struct RangeLiteral : Literal {
     virtual void print(std::ostream &out) const;
     virtual bool operator==(Literal const &other) const;
     virtual size_t hash() const;
-    virtual void simplify(Projections &project, Term::DotsMap &dots, Term::ScriptMap &scripts, unsigned &auxNum, bool positional = true);
-    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, AssignVec &assign, unsigned &auxNum);
+    virtual bool simplify(Projections &project, SimplifyState &state, bool positional = true, bool singleton = false);
+    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, AssignVec &assign, AuxGen &auxGen);
     virtual ULitVec unpool(bool beforeRewrite) const;
     virtual bool hasPool(bool beforeRewrite) const;
     virtual void replace(Defines &dx);
@@ -108,7 +111,7 @@ struct RangeLiteral : Literal {
     virtual ULit shift(bool negate);
     virtual UTerm headRepr() const;
     virtual ~RangeLiteral();
-    static ULit make(Term::DotsMap::value_type &dot);
+    static ULit make(SimplifyState::DotsMap::value_type &dots);
 
     UTerm assign;
     UTerm lower;
@@ -126,8 +129,8 @@ struct ScriptLiteral : Literal {
     virtual void print(std::ostream &out) const;
     virtual bool operator==(Literal const &other) const;
     virtual size_t hash() const;
-    virtual void simplify(Projections &project, Term::DotsMap &dots, Term::ScriptMap &scripts, unsigned &auxNum, bool positional = true);
-    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, AssignVec &assign, unsigned &auxNum);
+    virtual bool simplify(Projections &project, SimplifyState &state, bool positional = true, bool singleton = false);
+    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, AssignVec &assign, AuxGen &auxGen);
     virtual ULitVec unpool(bool beforeRewrite) const;
     virtual bool hasPool(bool beforeRewrite) const;
     virtual void replace(Defines &dx);
@@ -135,7 +138,7 @@ struct ScriptLiteral : Literal {
     virtual ULit shift(bool negate);
     virtual UTerm headRepr() const;
     virtual ~ScriptLiteral();
-    static ULit make(Term::ScriptMap::value_type &script);
+    static ULit make(SimplifyState::ScriptMap::value_type &script);
 
     UTerm assign;
     FWString name;
@@ -147,14 +150,15 @@ struct ScriptLiteral : Literal {
 
 struct FalseLiteral : Literal {
     FalseLiteral();
+    virtual unsigned projectScore() const { return 0; }
     virtual void collect(VarTermBoundVec &vars, bool bound) const;
     virtual void toTuple(UTermVec &tuple, int &id);
     virtual FalseLiteral *clone() const;
     virtual void print(std::ostream &out) const;
     virtual bool operator==(Literal const &other) const;
     virtual size_t hash() const;
-    virtual void simplify(Projections &project, Term::DotsMap &dots, Term::ScriptMap &scripts, unsigned &auxNum, bool positional = true);
-    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, AssignVec &assign, unsigned &auxNum);
+    virtual bool simplify(Projections &project, SimplifyState &state, bool positional = true, bool singleton = false);
+    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, AssignVec &assign, AuxGen &auxGen);
     virtual ULitVec unpool(bool beforeRewrite) const;
     virtual bool hasPool(bool beforeRewrite) const;
     virtual void replace(Defines &dx);
@@ -180,8 +184,8 @@ struct CSPLiteral : Literal {
     virtual void print(std::ostream &out) const;
     virtual bool operator==(Literal const &other) const;
     virtual size_t hash() const;
-    virtual void simplify(Projections &project, Term::DotsMap &dots, Term::ScriptMap &scripts, unsigned &auxNum, bool positional = true);
-    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, AssignVec &assign, unsigned &auxNum);
+    virtual bool simplify(Projections &project, SimplifyState &state, bool positional = true, bool singleton = false);
+    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, AssignVec &assign, AuxGen &auxGen);
     virtual ULitVec unpool(bool beforeRewrite) const;
     virtual bool hasPool(bool beforeRewrite) const;
     virtual void replace(Defines &dx);

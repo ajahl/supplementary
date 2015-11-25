@@ -41,7 +41,7 @@ std::ostream &operator<<(std::ostream &out, RECNAF naf);
 // }}}
 // {{{ declaration of Relation
 
-enum class Relation : unsigned { GT, LT, LEQ, GEQ, EQ, NEQ, ASSIGN };
+enum class Relation : unsigned { GT, LT, LEQ, GEQ, NEQ, EQ };
 
 Relation inv(Relation rel);
 Relation neg(Relation rel);
@@ -71,10 +71,10 @@ struct Bound {
     BoundVec unpool();
     //! Simplify the terms in the bound.
     //! \pre Must be called after unpool.
-    void simplify(Term::DotsMap &dots, Term::ScriptMap &scripts, unsigned &auxNum);
+    bool simplify(SimplifyState &state);
     //! Rewrite arithmetics.
     //! \pre Must be called after assignLevels.
-    void rewriteArithmetics(Term::ArithmeticsMap &arith, unsigned &auxNum);
+    void rewriteArithmetics(Term::ArithmeticsMap &arith, AuxGen &auxGen);
 
     Relation rel;
     UTerm bound;
@@ -131,20 +131,18 @@ inline std::ostream &operator<<(std::ostream &out, Relation rel) {
         case Relation::LT:     { out << "<"; break; }
         case Relation::LEQ:    { out << "<="; break; }
         case Relation::GEQ:    { out << ">="; break; }
-        case Relation::EQ:     { out << "=="; break; }
         case Relation::NEQ:    { out << "!="; break; }
-        case Relation::ASSIGN: { out << "="; break; }
+        case Relation::EQ: { out << "="; break; }
     }
     return out;
 }
 
 inline Relation inv(Relation rel) {
     switch (rel) {
-        case Relation::EQ:     { return Relation::EQ; }
         case Relation::NEQ:    { return Relation::NEQ; }
         case Relation::GEQ:    { return Relation::LEQ; }
         case Relation::LEQ:    { return Relation::GEQ; }
-        case Relation::ASSIGN: { return Relation::ASSIGN; }
+        case Relation::EQ: { return Relation::EQ; }
         case Relation::LT:     { return Relation::GT; }
         case Relation::GT:     { return Relation::LT; }
     }
@@ -154,11 +152,10 @@ inline Relation inv(Relation rel) {
 
 inline Relation neg(Relation rel) {
     switch (rel) {
-        case Relation::EQ:     { return Relation::NEQ; }
         case Relation::NEQ:    { return Relation::EQ; }
         case Relation::GEQ:    { return Relation::LT; }
         case Relation::LEQ:    { return Relation::GT; }
-        case Relation::ASSIGN: { return Relation::NEQ; }
+        case Relation::EQ: { return Relation::NEQ; }
         case Relation::LT:     { return Relation::GEQ; }
         case Relation::GT:     { return Relation::LEQ; }
     }
@@ -203,15 +200,16 @@ inline BoundVec Bound::unpool() {
     BoundVec pool;
     auto f = [&](UTerm &&x) { pool.emplace_back(rel, std::move(x)); };
     Term::unpool(bound, Gringo::unpool, f);
-    return std::move(pool);
+    return pool;
 }
 
-inline void Bound::simplify(Term::DotsMap &dots, Term::ScriptMap &scripts, unsigned &auxNum) {
-    bound->simplify(dots, scripts, auxNum, false, false).update(bound);
+inline bool Bound::simplify(SimplifyState &state) {
+    return !bound->simplify(state, false, false).update(bound).undefined();
 }
 
-inline void Bound::rewriteArithmetics(Term::ArithmeticsMap &arith, unsigned &auxNum) {
-    if (rel == Relation::ASSIGN) { Term::replace(bound, bound->rewriteArithmetics(arith, auxNum)); }
+inline void Bound::rewriteArithmetics(Term::ArithmeticsMap &arith, AuxGen &auxGen) {
+    // NOTE: this replaces all arithmetics to ensure that all terms in bounds are defined when evaluating
+    Term::replace(bound, bound->rewriteArithmetics(arith, auxGen, true));
 }
 
 template <>

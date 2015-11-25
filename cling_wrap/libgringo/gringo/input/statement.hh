@@ -29,6 +29,8 @@ namespace Gringo {
 class Defines;
 struct Term;
 
+using UTerm = std::unique_ptr<Term>;
+
 namespace Ground {
 
 // {{{ forward declarations
@@ -46,36 +48,45 @@ namespace Input {
 // {{{ forward declarations
 
 struct Literal;
-using ULit = std::unique_ptr<Literal>;
-
 struct BodyAggregate;
-using UBodyAggr = std::unique_ptr<BodyAggregate>;
-using UBodyAggrVec = std::vector<UBodyAggr>;
-
 struct ToGroundArg;
 struct Statement;
 struct Projections;
+struct HeadAggregate;
+
+using UTermVec     = std::vector<UTerm>;
+using UHeadAggr    = std::unique_ptr<HeadAggregate>;
+using ULit         = std::unique_ptr<Literal>;
+using UBodyAggr    = std::unique_ptr<BodyAggregate>;
+using UBodyAggrVec = std::vector<UBodyAggr>;
 
 // }}}
 // {{{ declaration of Statement
 
-
 using UStm = std::unique_ptr<Statement>;
 using UStmVec = std::vector<UStm>;
 
-struct Statement : Printable, Locatable {
-    typedef std::vector<std::pair<ULit, UBodyAggrVec>> SplitVec;
+enum class StatementType { RULE, EXTERNAL, WEAKCONSTRAINT };
 
+struct Statement : Printable, Locatable {
+    Statement(UTerm &&weight, UTerm &&prioriy, UTermVec &&tuple, UBodyAggrVec &&body);
+    Statement(UTermVec &&tuple, UBodyAggrVec &&body);
+    Statement(UHeadAggr &&head, UBodyAggrVec &&body, StatementType type);
+    virtual UStmVec unpool(bool beforeRewrite);
+    virtual bool rewrite1(Projections &project);
+    virtual void rewrite2();
     virtual Value isEDB() const;
-    virtual void add(ULit &&lit) = 0;
-    virtual void rewrite1(Projections &project) = 0;
-    virtual void rewrite2(SplitVec &splits) = 0;
-    virtual UStmVec unpool(bool beforeRewrite) = 0;
-    virtual bool hasPool(bool beforeRewrite) const = 0;
-    virtual bool check() const = 0;
-    virtual void replace(Defines &dx) = 0;
-    virtual void toGround(ToGroundArg &x, Ground::UStmVec &stms) const = 0;
-    virtual ~Statement() { }
+    virtual void print(std::ostream &out) const;
+    virtual bool hasPool(bool beforeRewrite) const;
+    virtual bool check() const;
+    virtual void replace(Defines &dx);
+    virtual void toGround(ToGroundArg &x, Ground::UStmVec &stms) const;
+    virtual void add(ULit &&lit);
+    virtual ~Statement();
+
+    UHeadAggr     head;
+    UBodyAggrVec  body;
+    StatementType type;
 };
 
 // }}}

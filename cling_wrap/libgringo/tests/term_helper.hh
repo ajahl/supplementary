@@ -40,7 +40,7 @@ inline std::unique_ptr<VarTerm> var(char const *x, int level = 0) {
     Location loc(FWString("dummy"), 1, 1, FWString("dummy"), 1, 1);
     auto var(make_locatable<VarTerm>(loc, FWString(x), ret));
     var->level = level;
-    return std::move(var);
+    return var;
 }
 
 inline std::unique_ptr<LinearTerm> lin(char const *x, int m, int n) {
@@ -85,6 +85,13 @@ template <class... T>
 UTermVec termvec(T&&... args) {
     return Test::init<UTermVec>(std::forward<T>(args)...);
 }
+
+inline Value NUM(int num) { return Value::createNum(num); }
+inline Value SUP() { return Value::createSup(); }
+inline Value INF() { return Value::createInf(); }
+inline Value STR(FWString name) { return Value::createStr(name); }
+inline Value ID(FWString name, bool sign = false) { return Value::createId(name, sign); }
+inline Value FUN(FWString name, FWValVec args, bool sign = false) { return Value::createFun(name, args, sign); }
 
 // }}}
 

@@ -295,9 +295,12 @@ private:
 struct Messages {
     Messages()
         : oldPrinter(std::move(message_printer())) {
-        message_printer() = make_unique<Gringo::Test::TestMessagePrinter>(messages);
+        message_printer() = gringo_make_unique<Gringo::Test::TestMessagePrinter>(messages);
     }
-    void clear() { messages.clear(); }
+    void clear() { 
+        messages.clear();
+        message_printer() = gringo_make_unique<Gringo::Test::TestMessagePrinter>(messages);
+    }
     ~Messages() {
         message_printer() = std::move(oldPrinter);
     }

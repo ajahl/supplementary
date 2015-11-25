@@ -80,6 +80,7 @@ struct GVarTerm;
 struct GFunctionTerm;
 struct GLinearTerm;
 using UGTerm = std::unique_ptr<GTerm>;
+using UGFunTerm = std::unique_ptr<GFunctionTerm>;
 struct GTerm : Printable, Hashable, Comparable<GTerm> {
     using EvalResult = std::pair<bool, Value>;
     virtual FWSignature sig() const = 0;
@@ -99,23 +100,54 @@ using SGRef     = std::shared_ptr<GRef>;
 // }}}
 // {{{ declaration of Term
 
+struct LinearTerm;
 struct VarTerm;
+struct ValTerm;
 using UTermVec        = std::vector<UTerm>;
 using UTermVecVec     = std::vector<UTermVec>;
 using VarTermVec      = std::vector<std::reference_wrapper<VarTerm>>;
 using VarTermBoundVec = std::vector<std::pair<VarTerm*,bool>>;
 using VarTermSet      = std::unordered_set<std::reference_wrapper<VarTerm>, value_hash<std::reference_wrapper<VarTerm>>, value_equal_to<std::reference_wrapper<VarTerm>>>;
 
+struct AuxGen {
+    AuxGen()
+    : auxNum(std::make_shared<unsigned>(0)) { }
+    AuxGen(AuxGen const &) = default;
+    AuxGen(AuxGen &&)      = default;
+    FWString uniqueName(char const *prefix);
+    UTerm uniqueVar(Location const &loc, unsigned level, const char *prefix);
+
+    std::shared_ptr<unsigned> auxNum;
+};
+
+struct SimplifyState {
+    //! Type that stores for each rewritten DotsTerm the associated variable and the lower and upper bound.
+    using DotsMap = std::vector<std::tuple<UTerm, UTerm, UTerm>>;
+    using ScriptMap = std::vector<std::tuple<UTerm, FWString, UTermVec>>;
+    SimplifyState(SimplifyState &state)
+    : gen(state.gen) { }
+    SimplifyState() { }
+    SimplifyState(SimplifyState const &) = delete;
+    SimplifyState(SimplifyState &&)      = default;
+    
+    std::unique_ptr<LinearTerm> createDots(Location const &loc, UTerm &&left, UTerm &&right);
+    std::unique_ptr<LinearTerm> createScript(Location const &loc, FWString name, UTermVec &&args);
+
+    DotsMap dots;
+    ScriptMap scripts;
+    AuxGen gen;
+};
+
 struct Term : public Printable, public Hashable, public Locatable, public Comparable<Term>, public Clonable<Term> {
     //! Return value of Term::project (replace, projected, project).
+    //! replace:   projected variables are stripped, null if untouched
+    //! projected: term with variables renamed, projected if null
+    //! project:   term with variables renamed, never null
     using ProjectRet   = std::tuple<UTerm, UTerm, UTerm>;
     using SVal         = std::shared_ptr<Value>;
     using VarSet       = std::unordered_set<FWString>;
     using RenameMap    = std::unordered_map<FWString, std::pair<FWString, SVal>>;
     using ReferenceMap = std::unordered_map<Term*, SGRef, value_hash<Term*>, value_equal_to<Term*>>;
-    //! Type that stores for each rewritten DotsTerm the associated variable and the lower and upper bound.
-    using DotsMap = std::vector<std::tuple<UTerm, UTerm, UTerm>>;
-    using ScriptMap = std::vector<std::tuple<UTerm, FWString, UTermVec>>;
     //! Type that stores for each rewritten arithmetic term (UnopTerm, BinopTerm, LuaTerm) the associated variable and the term itself.
     //! The indices of the vector correspond to the level of the term.
     using ArithmeticsMap = std::vector<std::unordered_map<UTerm, UTerm, value_hash<UTerm>, value_equal_to<UTerm>>>;
@@ -126,6 +158,7 @@ struct Term : public Printable, public Hashable, public Locatable, public Compar
     enum Invertibility { CONSTANT = 0, INVERTIBLE = 1, NOT_INVERTIBLE = 2 };
     //! Whether the term contains a VarTerm.
     virtual bool hasVar() const = 0;
+    virtual unsigned projectScore() const = 0;
     //! Rename the outermost term.
     //! \pre the term must either be a function term or value term holding an identifier.
     //! \note unnecessary; can be deleted
@@ -145,7 +178,7 @@ struct Term : public Printable, public Hashable, public Locatable, public Compar
     //! - f(X)+0 -> 0
     //! \note The term is unusable if the method returned a non-zero replacement term.
     //! \pre Must be called after unpool.
-    virtual SimplifyRet simplify(DotsMap &dots, ScriptMap &scripts, unsigned &auxNum, bool positional, bool arithmetic) = 0;
+    virtual SimplifyRet simplify(SimplifyState &state, bool positional, bool arithmetic) = 0;
     //! Removes anonymous variables in projectable positions (in outermost function symbols) from a term.
     //! The first element of the return value is a replacement term for the current term,
     //! which might be null if the term does not have to be replace..
@@ -159,18 +192,19 @@ struct Term : public Printable, public Hashable, public Locatable, public Compar
     //! assert(projected == #p_q(base,#X1,#p))
     //! assert(project   == #p_q(base,#X1,#Y2))
     //! \endcode
-    virtual ProjectRet project(bool rename, unsigned &auxNum) = 0;
+    virtual ProjectRet project(bool rename, AuxGen &gen) = 0;
     //! Obtain the type of a term.
     //! \pre Must be called after simplify.
     //! Whether evaluation of a term is guaranteed to not produce numeric values.
-    //! Basically, this means that the term is either a non-numeric constant or a function symbol.
+    //! This means that the term is either a non-numeric constant or a function symbol.
     virtual bool isNotNumeric() const = 0;
+    virtual bool isNotFunction() const = 0;
     //! Obtain the invertibility of a term.
     //! \pre Must be called after simplify.
     virtual Invertibility getInvertibility() const = 0;
     //! Evaluates the term to a value.
     //! \pre Must be called after simplify.
-    virtual Value eval() const = 0;
+    virtual Value eval(bool &undefined) const = 0;
     //! Returns true if the term evaluates to zero.
     //! \pre Must be called after simplify.
 	//! \pre Term is ground or 
@@ -190,28 +224,25 @@ struct Term : public Printable, public Hashable, public Locatable, public Compar
     //! Removes non-invertible arithmetics.
     //! \note The term is unusable if the method returned a non-zero replacement term.
     //! \pre Must be called after assignLevel.
-    virtual UTerm rewriteArithmetics(ArithmeticsMap &arith, unsigned &auxNum) = 0;
+    virtual UTerm rewriteArithmetics(ArithmeticsMap &arith, AuxGen &auxGen, bool forceDefined = false) = 0;
 	virtual bool match(Value const &val) const = 0;
     bool bind(VarSet &bound);
     virtual FWSignature getSig() const = 0;
     virtual UTerm renameVars(RenameMap &names) const = 0;
     SGRef _newRef(RenameMap &names, ReferenceMap &refs) const;
     UGTerm gterm() const;
+    virtual UGFunTerm gfunterm(RenameMap &names, ReferenceMap &refs) const;
     virtual bool hasPool() const = 0;
     virtual UGTerm gterm(RenameMap &names, ReferenceMap &refs) const = 0;
     virtual UTerm replace(Defines &defs, bool replace) = 0;
     virtual double estimate(double size, VarSet const &bound) const = 0;
     virtual Value isEDB() const = 0;
+    virtual int toNum(bool &undefined);
 
     virtual ~Term() { }
 
-    //! Creates a unique variable name
-    static FWString uniqueName(unsigned &auxNum, char const *prefix = "#X");
-    //! Creates a unique variable using #aux(auxNum) as name.
-    static UTerm uniqueVar(Location const &loc, unsigned &auxNum, unsigned level = 0, const char *prefix = "#X");
-    static UTerm uniqueVal(Location const &loc, unsigned &auxNum, const char *prefix = "#X");
     //! Inserts a term into arith creating a new unique variable if necessary.
-    static UTerm insert(ArithmeticsMap &arith, unsigned &auxNum, UTerm &&term);
+    static UTerm insert(ArithmeticsMap &arith, AuxGen &auxGen, UTerm &&term, bool eq = false);
 
     //! Set dst to src if src is non-zero.
     template <class T, class U>
@@ -237,7 +268,7 @@ UTermVec unpool(UTerm const &x);
 
 struct LinearTerm;
 struct Term::SimplifyRet {
-    enum Type { UNTOUCHED, CONSTANT, LINEAR, REPLACE };
+    enum Type { UNTOUCHED, CONSTANT, LINEAR, REPLACE, UNDEFINED };
     SimplifyRet(SimplifyRet const &) = delete;
     SimplifyRet(SimplifyRet &&x);
     //! Reference to untouched term.
@@ -248,9 +279,13 @@ struct Term::SimplifyRet {
     SimplifyRet(UTerm &&x);
     //! Indicate replacement with value.
     SimplifyRet(Value const &x);
+    //! Indicate undefined term
+    SimplifyRet();
     bool notNumeric() const;
+    bool notFunction() const;
     bool constant() const;
     bool isZero() const;
+    bool undefined() const;
     LinearTerm &lin();
     SimplifyRet &update(UTerm &x);
     ~SimplifyRet();
@@ -313,6 +348,7 @@ struct GValTerm : GTerm {
 
 struct GFunctionTerm : GTerm {
     GFunctionTerm(FWString name, UGTermVec &&args);
+    GFunctionTerm(GFunctionTerm const &x, bool sign);
     virtual bool operator==(GTerm const &other) const;
     virtual size_t hash() const;
     virtual void print(std::ostream &out) const;
@@ -327,6 +363,7 @@ struct GFunctionTerm : GTerm {
     virtual bool unify(GVarTerm &x);
     virtual ~GFunctionTerm();
 
+    bool sign;
     FWString name;
     UGTermVec args;
 };
@@ -383,23 +420,25 @@ struct GVarTerm : GTerm {
 
 struct PoolTerm : public Term {
     PoolTerm(UTermVec &&terms);
+    virtual unsigned projectScore() const;
     virtual void rename(FWString name);
-    virtual SimplifyRet simplify(DotsMap &dots, ScriptMap &scripts, unsigned &auxNum, bool positional, bool arithmetic);
-    virtual ProjectRet project(bool rename, unsigned &auxNum);
+    virtual SimplifyRet simplify(SimplifyState &state, bool positional, bool arithmetic);
+    virtual ProjectRet project(bool rename, AuxGen &gen);
     virtual bool hasVar() const;
     virtual void collect(VarTermBoundVec &vars, bool bound) const;
     virtual void collect(VarSet &vars, unsigned minLevel = 0, unsigned maxLevel = std::numeric_limits<unsigned>::max()) const;
-    virtual Value eval() const;
+    virtual Value eval(bool &undefined) const;
 	virtual bool match(Value const &val) const;
     virtual FWSignature getSig() const;
     virtual UTerm renameVars(RenameMap &names) const;
     virtual UGTerm gterm(RenameMap &names, ReferenceMap &refs) const;
     virtual unsigned getLevel() const;
     virtual bool isNotNumeric() const;
+    virtual bool isNotFunction() const;
     virtual Invertibility getInvertibility() const;
     virtual void print(std::ostream &out) const;
     virtual void unpool(UTermVec &x) const;
-    virtual UTerm rewriteArithmetics(ArithmeticsMap &arith, unsigned &auxNum);
+    virtual UTerm rewriteArithmetics(ArithmeticsMap &arith, AuxGen &auxGen, bool forceDefined);
     virtual bool operator==(Term const &other) const;
     virtual size_t hash() const;
     virtual PoolTerm *clone() const;
@@ -418,23 +457,25 @@ struct PoolTerm : public Term {
 
 struct ValTerm : public Term {
     ValTerm(Value value);
+    virtual unsigned projectScore() const;
     virtual void rename(FWString name);
-    virtual SimplifyRet simplify(DotsMap &dots, ScriptMap &scripts, unsigned &auxNum, bool positional, bool arithmetic);
-    virtual ProjectRet project(bool rename, unsigned &auxNum);
+    virtual SimplifyRet simplify(SimplifyState &state, bool positional, bool arithmetic);
+    virtual ProjectRet project(bool rename, AuxGen &gen);
     virtual bool hasVar() const;
     virtual void collect(VarTermBoundVec &vars, bool bound) const;
     virtual void collect(VarSet &vars, unsigned minLevel = 0, unsigned maxLevel = std::numeric_limits<unsigned>::max()) const;
-    virtual Value eval() const;
+    virtual Value eval(bool &undefined) const;
 	virtual bool match(Value const &val) const;
     virtual FWSignature getSig() const;
     virtual UTerm renameVars(RenameMap &names) const;
     virtual UGTerm gterm(RenameMap &names, ReferenceMap &refs) const;
     virtual unsigned getLevel() const;
     virtual bool isNotNumeric() const;
+    virtual bool isNotFunction() const;
     virtual Invertibility getInvertibility() const;
     virtual void print(std::ostream &out) const;
     virtual void unpool(UTermVec &x) const;
-    virtual UTerm rewriteArithmetics(ArithmeticsMap &arith, unsigned &auxNum);
+    virtual UTerm rewriteArithmetics(ArithmeticsMap &arith, AuxGen &auxGen, bool forceDefined);
     virtual bool operator==(Term const &other) const;
     virtual size_t hash() const;
     virtual ValTerm *clone() const;
@@ -453,23 +494,25 @@ struct ValTerm : public Term {
 
 struct VarTerm : Term {
     VarTerm(FWString name, SVal ref, unsigned level = 0, bool bindRef = false);
+    virtual unsigned projectScore() const;
     virtual void rename(FWString name);
-    virtual SimplifyRet simplify(DotsMap &dots, ScriptMap &scripts, unsigned &auxNum, bool positional, bool arithmetic);
-    virtual ProjectRet project(bool rename, unsigned &auxNum);
+    virtual SimplifyRet simplify(SimplifyState &state, bool positional, bool arithmetic);
+    virtual ProjectRet project(bool rename, AuxGen &gen);
     virtual bool hasVar() const;
     virtual void collect(VarTermBoundVec &vars, bool bound) const;
     virtual void collect(VarSet &vars, unsigned minLevel = 0, unsigned maxLevel = std::numeric_limits<unsigned>::max()) const;
-    virtual Value eval() const;
+    virtual Value eval(bool &undefined) const;
 	virtual bool match(Value const &val) const;
     virtual FWSignature getSig() const;
     virtual UTerm renameVars(RenameMap &names) const;
     virtual UGTerm gterm(RenameMap &names, ReferenceMap &refs) const;
     virtual unsigned getLevel() const;
     virtual bool isNotNumeric() const;
+    virtual bool isNotFunction() const;
     virtual Invertibility getInvertibility() const;
     virtual void print(std::ostream &out) const;
     virtual void unpool(UTermVec &x) const;
-    virtual UTerm rewriteArithmetics(ArithmeticsMap &arith, unsigned &auxNum);
+    virtual UTerm rewriteArithmetics(ArithmeticsMap &arith, AuxGen &auxGen, bool forceDefined);
     virtual bool operator==(Term const &other) const;
     virtual size_t hash() const;
     virtual VarTerm *clone() const;
@@ -491,23 +534,26 @@ struct VarTerm : Term {
 
 struct UnOpTerm : public Term {
     UnOpTerm(UnOp op, UTerm &&arg);
+    virtual unsigned projectScore() const;
     virtual void rename(FWString name);
-    virtual SimplifyRet simplify(DotsMap &dots, ScriptMap &scripts, unsigned &auxNum, bool positional, bool arithmetic);
-    virtual ProjectRet project(bool rename, unsigned &auxNum);
+    virtual SimplifyRet simplify(SimplifyState &state, bool positional, bool arithmetic);
+    virtual ProjectRet project(bool rename, AuxGen &gen);
     virtual bool hasVar() const;
     virtual void collect(VarTermBoundVec &vars, bool bound) const;
     virtual void collect(VarSet &vars, unsigned minLevel = 0, unsigned maxLevel = std::numeric_limits<unsigned>::max()) const;
-    virtual Value eval() const;
+    virtual Value eval(bool &undefined) const;
 	virtual bool match(Value const &val) const;
     virtual FWSignature getSig() const;
     virtual UTerm renameVars(RenameMap &names) const;
     virtual UGTerm gterm(RenameMap &names, ReferenceMap &refs) const;
+    virtual UGFunTerm gfunterm(RenameMap &names, ReferenceMap &refs) const;
     virtual unsigned getLevel() const;
     virtual bool isNotNumeric() const;
+    virtual bool isNotFunction() const;
     virtual Invertibility getInvertibility() const;
     virtual void print(std::ostream &out) const;
     virtual void unpool(UTermVec &x) const;
-    virtual UTerm rewriteArithmetics(ArithmeticsMap &arith, unsigned &auxNum);
+    virtual UTerm rewriteArithmetics(ArithmeticsMap &arith, AuxGen &auxGen, bool forceDefined);
     virtual bool operator==(Term const &other) const;
     virtual size_t hash() const;
     virtual UnOpTerm *clone() const;
@@ -527,23 +573,25 @@ struct UnOpTerm : public Term {
 
 struct BinOpTerm : public Term {
     BinOpTerm(BinOp op, UTerm &&left, UTerm &&right);
+    virtual unsigned projectScore() const;
     virtual void rename(FWString name);
-    virtual SimplifyRet simplify(DotsMap &dots, ScriptMap &scripts, unsigned &auxNum, bool positional, bool arithmetic);
-    virtual ProjectRet project(bool rename, unsigned &auxNum);
+    virtual SimplifyRet simplify(SimplifyState &state, bool positional, bool arithmetic);
+    virtual ProjectRet project(bool rename, AuxGen &gen);
     virtual bool hasVar() const;
     virtual void collect(VarTermBoundVec &vars, bool bound) const;
     virtual void collect(VarSet &vars, unsigned minLevel = 0, unsigned maxLevel = std::numeric_limits<unsigned>::max()) const;
-    virtual Value eval() const;
+    virtual Value eval(bool &undefined) const;
 	virtual bool match(Value const &val) const;
     virtual FWSignature getSig() const;
     virtual UTerm renameVars(RenameMap &names) const;
     virtual UGTerm gterm(RenameMap &names, ReferenceMap &refs) const;
     virtual unsigned getLevel() const;
     virtual bool isNotNumeric() const;
+    virtual bool isNotFunction() const;
     virtual Invertibility getInvertibility() const;
     virtual void print(std::ostream &out) const;
     virtual void unpool(UTermVec &x) const;
-    virtual UTerm rewriteArithmetics(ArithmeticsMap &arith, unsigned &auxNum);
+    virtual UTerm rewriteArithmetics(ArithmeticsMap &arith, AuxGen &auxGen, bool forceDefined);
     virtual bool operator==(Term const &other) const;
     virtual size_t hash() const;
     virtual BinOpTerm *clone() const;
@@ -564,23 +612,25 @@ struct BinOpTerm : public Term {
 
 struct DotsTerm : public Term {
     DotsTerm(UTerm &&left, UTerm &&right);
+    virtual unsigned projectScore() const;
     virtual void rename(FWString name);
-    virtual SimplifyRet simplify(DotsMap &dots, ScriptMap &scripts, unsigned &auxNum, bool positional, bool arithmetic);
-    virtual ProjectRet project(bool rename, unsigned &auxNum);
+    virtual SimplifyRet simplify(SimplifyState &state, bool positional, bool arithmetic);
+    virtual ProjectRet project(bool rename, AuxGen &gen);
     virtual bool hasVar() const;
     virtual void collect(VarTermBoundVec &vars, bool bound) const;
     virtual void collect(VarSet &vars, unsigned minLevel = 0, unsigned maxLevel = std::numeric_limits<unsigned>::max()) const;
-    virtual Value eval() const;
+    virtual Value eval(bool &undefined) const;
 	virtual bool match(Value const &val) const;
     virtual FWSignature getSig() const;
     virtual UTerm renameVars(RenameMap &names) const;
     virtual UGTerm gterm(RenameMap &names, ReferenceMap &refs) const;
     virtual unsigned getLevel() const;
     virtual bool isNotNumeric() const;
+    virtual bool isNotFunction() const;
     virtual Invertibility getInvertibility() const;
     virtual void print(std::ostream &out) const;
     virtual void unpool(UTermVec &x) const;
-    virtual UTerm rewriteArithmetics(ArithmeticsMap &arith, unsigned &auxNum);
+    virtual UTerm rewriteArithmetics(ArithmeticsMap &arith, AuxGen &auxGen, bool forceDefined);
     virtual bool operator==(Term const &other) const;
     virtual size_t hash() const;
     virtual DotsTerm *clone() const;
@@ -600,23 +650,25 @@ struct DotsTerm : public Term {
 
 struct LuaTerm : public Term {
     LuaTerm(FWString name, UTermVec &&args);
+    virtual unsigned projectScore() const;
     virtual void rename(FWString name);
-    virtual SimplifyRet simplify(DotsMap &dots, ScriptMap &scripts, unsigned &auxNum, bool positional, bool arithmetic);
-    virtual ProjectRet project(bool rename, unsigned &auxNum);
+    virtual SimplifyRet simplify(SimplifyState &state, bool positional, bool arithmetic);
+    virtual ProjectRet project(bool rename, AuxGen &gen);
     virtual bool hasVar() const;
     virtual void collect(VarTermBoundVec &vars, bool bound) const;
     virtual void collect(VarSet &vars, unsigned minLevel = 0, unsigned maxLevel = std::numeric_limits<unsigned>::max()) const;
-    virtual Value eval() const;
+    virtual Value eval(bool &undefined) const;
 	virtual bool match(Value const &val) const;
     virtual FWSignature getSig() const;
     virtual UTerm renameVars(RenameMap &names) const;
     virtual UGTerm gterm(RenameMap &names, ReferenceMap &refs) const;
     virtual unsigned getLevel() const;
     virtual bool isNotNumeric() const;
+    virtual bool isNotFunction() const;
     virtual Invertibility getInvertibility() const;
     virtual void print(std::ostream &out) const;
     virtual void unpool(UTermVec &x) const;
-    virtual UTerm rewriteArithmetics(ArithmeticsMap &arith, unsigned &auxNum);
+    virtual UTerm rewriteArithmetics(ArithmeticsMap &arith, AuxGen &auxGen, bool forceDefined);
     virtual bool operator==(Term const &other) const;
     virtual size_t hash() const;
     virtual LuaTerm *clone() const;
@@ -636,23 +688,26 @@ struct LuaTerm : public Term {
 
 struct FunctionTerm : public Term {
     FunctionTerm(FWString name, UTermVec &&args);
+    virtual unsigned projectScore() const;
     virtual void rename(FWString name);
-    virtual SimplifyRet simplify(DotsMap &dots, ScriptMap &scripts, unsigned &auxNum, bool positional, bool arithmetic);
-    virtual ProjectRet project(bool rename, unsigned &auxNum);
+    virtual SimplifyRet simplify(SimplifyState &state, bool positional, bool arithmetic);
+    virtual ProjectRet project(bool rename, AuxGen &gen);
     virtual bool hasVar() const;
     virtual void collect(VarTermBoundVec &vars, bool bound) const;
     virtual void collect(VarSet &vars, unsigned minLevel = 0, unsigned maxLevel = std::numeric_limits<unsigned>::max()) const;
-    virtual Value eval() const;
+    virtual Value eval(bool &undefined) const;
 	virtual bool match(Value const &val) const;
     virtual FWSignature getSig() const;
     virtual UTerm renameVars(RenameMap &names) const;
     virtual UGTerm gterm(RenameMap &names, ReferenceMap &refs) const;
+    virtual UGFunTerm gfunterm(RenameMap &names, ReferenceMap &refs) const;
     virtual unsigned getLevel() const;
     virtual bool isNotNumeric() const;
+    virtual bool isNotFunction() const;
     virtual Invertibility getInvertibility() const;
     virtual void print(std::ostream &out) const;
     virtual void unpool(UTermVec &x) const;
-    virtual UTerm rewriteArithmetics(ArithmeticsMap &arith, unsigned &auxNum);
+    virtual UTerm rewriteArithmetics(ArithmeticsMap &arith, AuxGen &auxGen, bool forceDefined);
     virtual bool operator==(Term const &other) const;
     virtual size_t hash() const;
     virtual FunctionTerm *clone() const;
@@ -676,25 +731,25 @@ struct LinearTerm : Term {
     using UVarTerm = std::unique_ptr<VarTerm>;
     LinearTerm(VarTerm const &var, int m, int n);
     LinearTerm(UVarTerm &&var, int m, int n);
+    virtual unsigned projectScore() const;
     virtual void rename(FWString name);
-    virtual SimplifyRet simplify(DotsMap &dots, ScriptMap &scripts, unsigned &auxNum, bool positional, bool arithmetic);
-    virtual ProjectRet project(bool rename, unsigned &auxNum);
+    virtual SimplifyRet simplify(SimplifyState &state, bool positional, bool arithmetic);
+    virtual ProjectRet project(bool rename, AuxGen &gen);
     virtual bool hasVar() const;
     virtual void collect(VarTermBoundVec &vars, bool bound) const;
     virtual void collect(VarSet &vars, unsigned minLevel = 0, unsigned maxLevel = std::numeric_limits<unsigned>::max()) const;
-    virtual Value eval() const;
+    virtual Value eval(bool &undefined) const;
 	virtual bool match(Value const &val) const;
-    static std::unique_ptr<LinearTerm> create(Location const &loc, DotsMap &dots, unsigned &auxNum, UTerm &&left, UTerm &&right);
-    static std::unique_ptr<LinearTerm> create(Location const &loc, ScriptMap &scripts, unsigned &auxNum, FWString name, UTermVec &&args);
     virtual FWSignature getSig() const;
     virtual UTerm renameVars(RenameMap &names) const;
     virtual UGTerm gterm(RenameMap &names, ReferenceMap &refs) const;
     virtual unsigned getLevel() const;
     virtual bool isNotNumeric() const;
+    virtual bool isNotFunction() const;
     virtual Invertibility getInvertibility() const;
     virtual void print(std::ostream &out) const;
     virtual void unpool(UTermVec &x) const;
-    virtual UTerm rewriteArithmetics(ArithmeticsMap &arith, unsigned &auxNum);
+    virtual UTerm rewriteArithmetics(ArithmeticsMap &arith, AuxGen &auxGen, bool forceDefined);
     virtual bool operator==(Term const &other) const;
     virtual size_t hash() const;
     virtual LinearTerm *clone() const;
@@ -752,8 +807,6 @@ void Term::unpoolJoin(Vec &vec, TermUnpool const &f) {
     }
     vec = std::move(join);
 }
-
-int toNum(UTerm const &x);
 
 // }}}
 

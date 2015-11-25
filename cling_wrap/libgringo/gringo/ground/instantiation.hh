@@ -22,7 +22,7 @@
 #define _GRINGO_GROUND_INSTANTIATION_HH
 
 #include <gringo/base.hh>
-#include <deque>
+#include <queue>
 
 // {{{ forward declarations
 
@@ -45,10 +45,10 @@ struct Queue {
     void enqueue(Domain &inst);
     ~Queue();
     
-    using QueueDec  = std::deque<std::reference_wrapper<Instantiator>>;
+    using QueueDec  = std::vector<std::reference_wrapper<Instantiator>>;
     using DomainVec = std::vector<std::reference_wrapper<Domain>>;
     QueueDec  current;
-    QueueDec  queue;
+    std::array<QueueDec,2>  queues;
     DomainVec domains;
 };
 
@@ -68,9 +68,9 @@ using UIdx = std::unique_ptr<Binder>;
 
 struct SolutionCallback {
     virtual void report(Output::OutputBase &out) = 0;
-    virtual void mark() = 0;
-    virtual void unmark(Queue &queue) = 0;
+    virtual void propagate(Queue &queue) = 0;
     virtual void printHead(std::ostream &out) const = 0;
+    virtual unsigned priority() const { return 0; }
     virtual ~SolutionCallback() { }
 };
 
@@ -110,23 +110,25 @@ inline std::ostream &operator<<(std::ostream &out, BackjumpBinder &x) { x.print(
 // {{{ declaration of Instantiator
 
 struct Instantiator {
-    typedef BackjumpBinder::DependVec DependVec;
-    typedef BackjumpBinder::SValVec SValVec;
+    using DependVec = BackjumpBinder::DependVec;
+    using SValVec = BackjumpBinder::SValVec;
     
     Instantiator(SolutionCallback &callback);
     Instantiator(Instantiator &&x) noexcept;
+    Instantiator &operator=(Instantiator &&x) noexcept;
     void add(UIdx &&index, DependVec &&depends);
     void finalize(DependVec &&depends);
     void enqueue(Queue &queue);
     void instantiate(Output::OutputBase &out);
     void print(std::ostream &out) const;
+    unsigned priority() const;
     ~Instantiator();
 
     SolutionCallback &callback;
     std::vector<BackjumpBinder> binders;
     bool enqueued = false;
 };
-typedef std::vector<Instantiator> InstVec;
+using InstVec = std::vector<Instantiator>;
 inline std::ostream &operator<<(std::ostream &out, Instantiator &x) { x.print(out); return out; }
 
 // }}}

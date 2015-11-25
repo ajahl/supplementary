@@ -65,19 +65,20 @@ struct Projections {
 struct Literal : Printable, Hashable, Locatable, Comparable<Literal>, Clonable<Literal> {
     using AssignVec = std::vector<std::pair<UTerm, UTerm>>;
 
+    virtual unsigned projectScore() const { return 2; }
     //! Removes all occurrences of PoolTerm instances. 
     //! Returns all unpooled incarnations of the literal.
     //! \note The literal becomes unusable after the method returns.
     //! \post The returned pool does not contain PoolTerm instances.
     virtual ULitVec unpool(bool beforeRewrite) const = 0;
     //! Simplifies the literal.
-    virtual void simplify(Projections &project, Term::DotsMap &dots, Term::ScriptMap &scripts, unsigned &auxNum, bool positional = true) = 0;
+    virtual bool simplify(Projections &project, SimplifyState &state, bool positional = true, bool singleton = false) = 0;
     //! Collects variables.
     //! \pre Must be called after simplify to properly account for bound variables.
     virtual void collect(VarTermBoundVec &vars, bool bound) const = 0;
     //! Removes non-invertible arithmetics.
     //! \note This method will not be called for head literals.
-    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, AssignVec &assign, unsigned &auxNum) = 0;
+    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, AssignVec &assign, AuxGen &auxGen) = 0;
     virtual void toTuple(UTermVec &tuple, int &id) = 0;
     virtual Value isEDB() const;
     virtual bool hasPool(bool beforeRewrite) const = 0;

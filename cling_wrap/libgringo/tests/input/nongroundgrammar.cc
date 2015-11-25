@@ -41,12 +41,13 @@ public:
     // {{{ terms
     virtual TermUid term(Location const &loc, Value val);
     virtual TermUid term(Location const &loc, FWString name);
-    virtual TermUid term(Location const &loc, bool anonymous);
     virtual TermUid term(Location const &loc, UnOp op, TermUid a);
     virtual TermUid term(Location const &loc, UnOp op, TermVecUid a);
     virtual TermUid term(Location const &loc, BinOp op, TermUid a, TermUid b);
     virtual TermUid term(Location const &loc, TermUid a, TermUid b);
     virtual TermUid term(Location const &loc, FWString name, TermVecVecUid b, bool lua);
+    virtual TermUid term(Location const &loc, TermVecUid args, bool forceTuple);
+    virtual TermUid pool(Location const &loc, TermVecUid args);
     // }}}
     // {{{ csp
     virtual CSPMulTermUid cspmulterm(Location const &loc, TermUid coe, TermUid var);
@@ -117,7 +118,7 @@ public:
     virtual void rule(Location const &loc, HdLitUid head, BdLitVecUid body);
     virtual void define(Location const &loc, FWString name, TermUid value, bool defaultDef);
     virtual void optimize(Location const &loc, TermUid weight, TermUid priority, TermVecUid cond, BdLitVecUid body);
-    virtual void showsig(Location const &loc, FWString name, unsigned arity, bool csp);
+    virtual void showsig(Location const &loc, FWSignature sig, bool csp);
     virtual void show(Location const &loc, TermUid t, BdLitVecUid body, bool csp);
     virtual void python(Location const &loc, FWString code);
     virtual void lua(Location const &loc, FWString code);
@@ -256,11 +257,6 @@ TermUid TestNongroundProgramBuilder::term(Location const &, FWString name) {
     return terms_.emplace(str());
 }
 
-TermUid TestNongroundProgramBuilder::term(Location const &, bool anonymous) {
-    current_ << (anonymous ? "_" : "*");
-    return terms_.emplace(str());
-}
-
 TermUid TestNongroundProgramBuilder::term(Location const &, UnOp op, TermUid a) { 
     if(op == UnOp::ABS) { current_ << "|"; }
     else { current_ << "(" << op; }
@@ -287,13 +283,29 @@ TermUid TestNongroundProgramBuilder::term(Location const &, TermUid a, TermUid b
 }
 
 TermUid TestNongroundProgramBuilder::term(Location const &, FWString name, TermVecVecUid a, bool lua) {
+    assert(*name != "");
     assert(!termvecvecs_[a].empty());
-    bool nempty = lua || termvecvecs_[a].size() > 1 || !termvecvecs_[a].front().empty() || *name == "";
+    bool nempty = lua || termvecvecs_[a].size() > 1 || !termvecvecs_[a].front().empty();
     if (lua) { current_ << "@"; }
     current_ << *name;
     if (nempty) { current_ << "("; }
     print(termvecvecs_.erase(a));
     if (nempty) { current_ << ")"; }
+    return terms_.emplace(str());
+}
+
+TermUid TestNongroundProgramBuilder::term(Location const &, TermVecUid args, bool forceTuple) {
+    current_ << "(";
+    print(termvecs_.erase(args), ",");
+    if (forceTuple) { current_ << ","; }
+    current_ << ")";
+    return terms_.emplace(str());
+}
+
+TermUid TestNongroundProgramBuilder::pool(Location const &, TermVecUid args) {
+    current_ << "(";
+    print(termvecs_.erase(args), ";");
+    current_ << ")";
     return terms_.emplace(str());
 }
 
@@ -562,8 +574,8 @@ void TestNongroundProgramBuilder::optimize(Location const &, TermUid weight, Ter
     statements_.emplace_back(str());
 }
 
-void TestNongroundProgramBuilder::showsig(Location const &, FWString name, unsigned arity, bool csp) {
-    current_ << "#showsig " << (csp ? "$" : "") << name << "/" << arity << ".";
+void TestNongroundProgramBuilder::showsig(Location const &, FWSignature sig, bool csp) {
+    current_ << "#showsig " << (csp ? "$" : "") << *sig << ".";
     statements_.emplace_back(str());
 }
 
@@ -706,11 +718,11 @@ void TestNongroundGrammar::test_term() {
     CPPUNIT_ASSERT_EQUAL(std::string("#program base().\np(f(1,2,3))."), parse("p(f(1,2,3))."));
     CPPUNIT_ASSERT_EQUAL(std::string("#program base().\np(f(;;;1,2;3))."), parse("p(f(;;;1,2;3))."));
     // tuples / parenthesis
-    CPPUNIT_ASSERT_EQUAL(std::string("#program base().\np(())."), parse("p(())."));
-    CPPUNIT_ASSERT_EQUAL(std::string("#program base().\np((1))."), parse("p((1))."));
-    CPPUNIT_ASSERT_EQUAL(std::string("#program base().\np((1,2))."), parse("p((1,2))."));
-    CPPUNIT_ASSERT_EQUAL(std::string("#program base().\np((1,2,3))."), parse("p((1,2,3))."));
-    CPPUNIT_ASSERT_EQUAL(std::string("#program base().\np((;;;1,2;3))."), parse("p((;;;1,2;3))."));
+    CPPUNIT_ASSERT_EQUAL(std::string("#program base().\np((()))."), parse("p(())."));
+    CPPUNIT_ASSERT_EQUAL(std::string("#program base().\np(((1)))."), parse("p((1))."));
+    CPPUNIT_ASSERT_EQUAL(std::string("#program base().\np(((1,2)))."), parse("p((1,2))."));
+    CPPUNIT_ASSERT_EQUAL(std::string("#program base().\np(((1,2,3)))."), parse("p((1,2,3))."));
+    CPPUNIT_ASSERT_EQUAL(std::string("#program base().\np((();();();(1,2);(3,)))."), parse("p((;;;1,2;3,))."));
     // unary operations
     CPPUNIT_ASSERT_EQUAL(std::string("#program base().\np((-1))."), parse("p(-1)."));
     CPPUNIT_ASSERT_EQUAL(std::string("#program base().\np((~1))."), parse("p(~1)."));
@@ -728,7 +740,7 @@ void TestNongroundGrammar::test_term() {
     // precedence
     CPPUNIT_ASSERT_EQUAL(std::string("#program base().\np(((1+2)+((3*4)*(5**(6**7)))))."), parse("p(1+2+3*4*5**6**7)."));
     // nesting
-    CPPUNIT_ASSERT_EQUAL(std::string("#program base().\np((f(1,(;;;1,(x..Y);3),3)+p(f(1,#sup,3))))."), parse("p(f(1,(;;;1,x..Y;3),3)+p(f(1,#sup,3)))."));
+    CPPUNIT_ASSERT_EQUAL(std::string("#program base().\np((f(1,(();();();(1,(x..Y));(3)),3)+p(f(1,#sup,3))))."), parse("p(f(1,(;;;1,x..Y;3),3)+p(f(1,#sup,3)))."));
 }
 
 void TestNongroundGrammar::test_atomargs() {
@@ -805,7 +817,7 @@ void TestNongroundGrammar::test_bdaggr() {
     CPPUNIT_ASSERT_EQUAL(std::string("#program base().\n#false:-1<=#count{}."), parse(":-1<={}."));
     CPPUNIT_ASSERT_EQUAL(std::string("#program base().\n#false:-1>#count{}."), parse(":-1>{}."));
     CPPUNIT_ASSERT_EQUAL(std::string("#program base().\n#false:-1>=#count{}."), parse(":-1>={}."));
-    CPPUNIT_ASSERT_EQUAL(std::string("#program base().\n#false:-1==#count{}."), parse(":-1=={}."));
+    CPPUNIT_ASSERT_EQUAL(std::string("#program base().\n#false:-1=#count{}."), parse(":-1=={}."));
     CPPUNIT_ASSERT_EQUAL(std::string("#program base().\n#false:-1=#count{}."), parse(":-1={}."));
     // test upper
     CPPUNIT_ASSERT_EQUAL(std::string("#program base().\n#false:-1>=#count{}."), parse(":-{}1."));
@@ -813,7 +825,7 @@ void TestNongroundGrammar::test_bdaggr() {
     CPPUNIT_ASSERT_EQUAL(std::string("#program base().\n#false:-1<=#count{}."), parse(":-{}>=1."));
     CPPUNIT_ASSERT_EQUAL(std::string("#program base().\n#false:-1>#count{}."), parse(":-{}<1."));
     CPPUNIT_ASSERT_EQUAL(std::string("#program base().\n#false:-1>=#count{}."), parse(":-{}<=1."));
-    CPPUNIT_ASSERT_EQUAL(std::string("#program base().\n#false:-1==#count{}."), parse(":-{}==1."));
+    CPPUNIT_ASSERT_EQUAL(std::string("#program base().\n#false:-1=#count{}."), parse(":-{}==1."));
     CPPUNIT_ASSERT_EQUAL(std::string("#program base().\n#false:-1=#count{}."), parse(":-{}=1."));
     // test both
     CPPUNIT_ASSERT_EQUAL(std::string("#program base().\n#false:-1<=#count{}<=2."), parse(":-1{}2."));
@@ -841,7 +853,7 @@ void TestNongroundGrammar::test_hdaggr() {
     CPPUNIT_ASSERT_EQUAL(std::string("#program base().\n1<=#count{}."), parse("1<={}."));
     CPPUNIT_ASSERT_EQUAL(std::string("#program base().\n1>#count{}."), parse("1>{}."));
     CPPUNIT_ASSERT_EQUAL(std::string("#program base().\n1>=#count{}."), parse("1>={}."));
-    CPPUNIT_ASSERT_EQUAL(std::string("#program base().\n1==#count{}."), parse("1=={}."));
+    CPPUNIT_ASSERT_EQUAL(std::string("#program base().\n1=#count{}."), parse("1=={}."));
     CPPUNIT_ASSERT_EQUAL(std::string("#program base().\n1=#count{}."), parse("1={}."));
     // test upper
     CPPUNIT_ASSERT_EQUAL(std::string("#program base().\n1>=#count{}."), parse("{}1."));
@@ -849,7 +861,7 @@ void TestNongroundGrammar::test_hdaggr() {
     CPPUNIT_ASSERT_EQUAL(std::string("#program base().\n1<=#count{}."), parse("{}>=1."));
     CPPUNIT_ASSERT_EQUAL(std::string("#program base().\n1>#count{}."), parse("{}<1."));
     CPPUNIT_ASSERT_EQUAL(std::string("#program base().\n1>=#count{}."), parse("{}<=1."));
-    CPPUNIT_ASSERT_EQUAL(std::string("#program base().\n1==#count{}."), parse("{}==1."));
+    CPPUNIT_ASSERT_EQUAL(std::string("#program base().\n1=#count{}."), parse("{}==1."));
     CPPUNIT_ASSERT_EQUAL(std::string("#program base().\n1=#count{}."), parse("{}=1."));
     // test both
     CPPUNIT_ASSERT_EQUAL(std::string("#program base().\n1<=#count{}<=2."), parse("1{}2."));

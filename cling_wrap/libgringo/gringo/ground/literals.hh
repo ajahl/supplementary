@@ -117,7 +117,7 @@ struct PredicateLiteral : Literal, BodyOcc {
     virtual UIdx index(Scripts &scripts, BinderType type, Term::VarSet &bound);
     virtual Output::Literal *toOutput();
     virtual Score score(Term::VarSet const &bound);
-    virtual void checkDefined(LocSet &done, SigSet const &edb) const;
+    virtual void checkDefined(LocSet &done, SigSet const &edb, UndefVec &undef) const;
     virtual ~PredicateLiteral();
 
     OccurrenceType type = OccurrenceType::POSITIVELY_STRATIFIED;
@@ -128,9 +128,10 @@ struct PredicateLiteral : Literal, BodyOcc {
 };
 
 struct ProjectionLiteral : PredicateLiteral {
-    ProjectionLiteral(PredicateDomain &dom, UTerm &&repr);
+    ProjectionLiteral(PredicateDomain &dom, UTerm &&repr, bool initialized);
     virtual UIdx index(Scripts &scripts, BinderType type, Term::VarSet &bound);
     virtual ~ProjectionLiteral();
+    bool initialized_;
 };
 
 // }}}
@@ -144,7 +145,7 @@ struct ExternalBodyOcc : BodyOcc {
     virtual void setType(OccurrenceType x);
     virtual OccurrenceType getType() const;
     virtual DefinedBy &definedBy();
-    virtual void checkDefined(LocSet &done, SigSet const &edb) const;
+    virtual void checkDefined(LocSet &done, SigSet const &edb, UndefVec &undef) const;
     virtual ~ExternalBodyOcc();
     DefinedBy defs;
 };

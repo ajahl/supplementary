@@ -22,7 +22,7 @@ find_package(catkin REQUIRED cmake_modules)
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-  INCLUDE_DIRS include libgringo libgringo/src libprogram_opts libclasp
+  INCLUDE_DIRS include libgringo "libgringo/src" libprogram_opts libclasp
   LIBRARIES libcling_wrap libgringo libprogram_opts libclasp
 #  CATKIN_DEPENDS other_catkin_pkg
 #  DEPENDS system_lib
@@ -34,18 +34,28 @@ catkin_package(
 
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
- include_directories(include libgringo libgringo/src libprogram_opts libclasp libclingo)
+ include_directories(include libgringo "libgringo/src" libprogram_opts libclasp libclingo)
 
 ### BUILDING GRINGO ###
 if(NOT "${ARCH}" STREQUAL "armv7l")
   FIND_PACKAGE(RE2C REQUIRED 0.13.5)
-  set(FileToCheck "libgringo/src/input/nongroundlexer.hh")
-  ADD_CUSTOM_TARGET(CheckNonGroundLexer ALL
+
+  ADD_CUSTOM_TARGET(NonGroundLexer ALL
    COMMAND ${CMAKE_COMMAND}
+     -DINPUT="libgringo/src/input/nongroundlexer.xh"
+     -DOUTPUT="libgringo/src/input/nongroundlexer.hh"
      -DFileToCheck=${FileToCheck}
      -DWORKING_DIRECTORY=${CMAKE_CURRENT_SOURCE_DIR}
      -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenRE2C.cmake
-   COMMENT "Checking if ${FileToCheck} exists..."
+  )
+
+   ADD_CUSTOM_TARGET(GroundtermLexer ALL
+   COMMAND ${CMAKE_COMMAND}
+     -DINPUT="libgringo/src/input/groundtermlexer.xh"
+     -DOUTPUT="libgringo/src/input/groundtermlexer.hh"
+     -DFileToCheck=${FileToCheck}
+     -DWORKING_DIRECTORY=${CMAKE_CURRENT_SOURCE_DIR}
+     -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/GenRE2C.cmake
   )
  
   FIND_PACKAGE(BISON REQUIRED 3.0) 
@@ -54,13 +64,19 @@ if(NOT "${ARCH}" STREQUAL "armv7l")
 	${CMAKE_CURRENT_SOURCE_DIR}/libgringo/src/input/nongroundgrammar/grammar.cc
 	COMPILE_FLAGS "-r all --report-file=libgringo/src/input/nongroundgrammar/grammar.out"
   )
+  BISON_TARGET(GringoParser2
+	libgringo/src/input/groundtermgrammar.yy
+	${CMAKE_CURRENT_SOURCE_DIR}/libgringo/src/input/groundtermgrammar/grammar.cc
+	COMPILE_FLAGS "-r all --report-file=libgringo/src/input/groundtermgrammar/grammar.out"
+  )
 
  file(GLOB_RECURSE libgringo_SOURCES "libgringo/src/*.cc")
  file(GLOB_RECURSE libgringo_SOURCES ${libgringo_SOURCES} "libgringo/src/*.cpp")
  add_library(
-  libgringo STATIC ${libgringo_SOURCES} ${BISON_GringoParser_OUTPUTS}
- )
- add_dependencies(libgringo CheckNonGroundLexer)
+  libgringo STATIC ${libgringo_SOURCES} ${BISON_GringoParser_OUTPUTS} ${BISON_GringoParser2_OUTPUTS} )
+
+ add_dependencies(libgringo CheckNonGroundLexer CheckGroundtermLexer)
+
 else(NOT ${ARCH} STREQUAL "armv7l")
  message("We are on an arm-architecture, so we cannot build the ASP Solver Stuff, but that is fine...")
 endif(NOT "${ARCH}" STREQUAL "armv7l")

@@ -21,27 +21,29 @@
 #ifndef _GRINGO_OUTPUT_LITERAL_HH
 #define _GRINGO_OUTPUT_LITERAL_HH
 
-#include <gringo/clonable.hh>
-#include <gringo/comparable.hh>
-#include <gringo/hashable.hh>
-#include <gringo/value.hh>
+#include <gringo/domain.hh>
 
 namespace Gringo { namespace Output {
 
 struct LparseOutputter;
 struct LparseTranslator;
 struct Statement;
+struct AuxAtom;
 using UStm     = std::unique_ptr<Statement>;
 using UStmVec  = std::vector<UStm>;
 using CSPBound = std::pair<int, int>;
+using SAuxAtom         = std::shared_ptr<AuxAtom>;
+using AssignmentLookup = std::function<std::pair<bool, TruthValue>(unsigned)>; // (isExternal, truthValue)
 
 // {{{ declaration of Literal
 
 struct Literal;
 using ULit = std::unique_ptr<Literal>;
 struct Literal : Clonable<Literal>, Hashable, Comparable<Literal> {
+    virtual ULit negateLit(LparseTranslator &x) const;
+    virtual PredicateDomain::element_type *isAtom() const { return nullptr; };
+    virtual SAuxAtom isAuxAtom() const { return nullptr; };
     virtual ULit toLparse(LparseTranslator &x) = 0;
-    virtual void makeEqual(ULit &&lit, LparseTranslator &x) const = 0;
     virtual void printPlain(std::ostream &out) const = 0;
     virtual bool isIncomplete() const = 0;
     virtual int lparseUid(LparseOutputter &out) const = 0;
@@ -49,6 +51,9 @@ struct Literal : Clonable<Literal>, Hashable, Comparable<Literal> {
     virtual void updateBound(CSPBound &bounds, bool negate) const { (void)bounds; (void)negate; }
     virtual bool invertible() const { return false; }
     virtual void invert() { assert(false); }
+    virtual bool needsSemicolon() const { return false; }
+    virtual bool isPositive() const { return true; }
+    virtual std::pair<bool, TruthValue> getTruth(AssignmentLookup) { return {false, TruthValue::Open}; };
     virtual ~Literal() { }
 };
 using LitVec  = std::vector<std::reference_wrapper<Literal>>;

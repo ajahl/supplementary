@@ -29,8 +29,6 @@
 
 namespace Gringo { namespace Output {
 
-enum class ExternalType { E_FREE, E_TRUE, E_FALSE };
-
 // {{{ declaration of LparseOutputter
 
 using OutputPredicates = std::vector<std::tuple<Location, FWSignature, bool>>;
@@ -51,7 +49,7 @@ struct LparseOutputter {
     virtual void printDisjunctiveRule(AtomVec const &atoms, LitVec const &body) = 0;
     virtual void finishRules() = 0;
     virtual void printSymbol(unsigned atomUid, Value v) = 0;
-    virtual void printExternal(unsigned atomUid, ExternalType type) = 0;
+    virtual void printExternal(unsigned atomUid, TruthValue type) = 0;
     virtual void finishSymbols() = 0;
     virtual bool &disposeMinimize() = 0;
     virtual ~LparseOutputter() { }

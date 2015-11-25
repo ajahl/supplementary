@@ -76,15 +76,18 @@ struct Matcher : Binder {
         , naf(naf) { }
     virtual IndexUpdater *getUpdater() { return nullptr; }
     virtual void match() {
-        result = domain.lookup(repr, naf);
-        firstMatch = result;
+        bool undefined = false;
+        result = domain.lookup(repr, naf, undefined);
+        firstMatch = result && !undefined;
     }
     virtual bool next() {
         bool ret = firstMatch;
         firstMatch = false;
         return ret;
     }
-    virtual void print(std::ostream &out) const { out << naf << repr << "@ALL"; }
+    virtual void print(std::ostream &out) const { 
+        out << naf << repr << "[" << domain.exports.generation_ << "<=" << domain.exports.nextGeneration_ << "<=" << domain.exports.size() << "]" << "@ALL"; 
+    }
     virtual ~Matcher() { }
 
     Match      &result;
@@ -109,8 +112,14 @@ struct PosMatcher : Binder, IndexUpdater {
         , type(type) { }
     virtual IndexUpdater *getUpdater() { return type == BinderType::NEW ? this : nullptr; }
     virtual void match() { 
-        result = domain.lookup(*repr, type);
-        firstMatch = result;
+        bool undefined = false;
+        result = domain.lookup(*repr, type, undefined);
+        if (!undefined) {
+            firstMatch = result;
+        }
+        else {
+            firstMatch = false;
+        }
     }
     virtual bool next() {
         bool ret = firstMatch;
@@ -118,7 +127,7 @@ struct PosMatcher : Binder, IndexUpdater {
         return ret;
     }
     virtual bool update() { return domain.check(*repr, imported); }
-    virtual void print(std::ostream &out) const { out << *repr << "@" << type; }
+    virtual void print(std::ostream &out) const { out << *repr << "[" << domain.exports.generation_ << "<=" << domain.exports.nextGeneration_ << "<=" << domain.exports.size() << "]" << "@" << type; }
     virtual ~PosMatcher() { };
 
     Match      &result;
@@ -171,28 +180,28 @@ inline UIdx make_binder(AbstractDomain<Element> &domain, NAF naf, Term const &re
             idxClone->bind(empty);
             if (occBound.empty()) { 
                 auto &idx(domain.add(std::move(idxClone), imported));
-                return make_unique<FullPredicateBinder>(std::move(predClone), elem, idx, type);
+                return gringo_make_unique<FullPredicateBinder>(std::move(predClone), elem, idx, type);
             }
             else {
                 assert(imported == 0);
                 auto &idx(domain.add(std::move(idxBound), std::move(idxClone)));
-                return make_unique<PosPredicateBinder>(std::move(predClone), elem, idx, type, std::move(predBound));
+                return gringo_make_unique<PosPredicateBinder>(std::move(predClone), elem, idx, type, std::move(predBound));
             }
         }
         else if (recursive) {
             assert(imported == 0);
             Term::VarSet empty;
             predClone->bind(empty);
-            return make_unique<PosPredicateMatcher>(elem, domain, std::move(predClone), type);
+            return gringo_make_unique<PosPredicateMatcher>(elem, domain, std::move(predClone), type);
         }
         else { 
             assert(imported == 0);
-            return make_unique<PredicateMatcher>(elem, domain, repr, RECNAF::POS); 
+            return gringo_make_unique<PredicateMatcher>(elem, domain, repr, RECNAF::POS); 
         }
     }
     else { 
         assert(imported == 0);
-        return make_unique<PredicateMatcher>(elem, domain, repr, recnaf(naf, recursive));
+        return gringo_make_unique<PredicateMatcher>(elem, domain, repr, recnaf(naf, recursive));
     }
 }
 

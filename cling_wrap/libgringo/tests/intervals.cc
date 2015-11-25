@@ -36,6 +36,8 @@ class TestInterval : public CppUnit::TestFixture {
         CPPUNIT_TEST(test_remove);
         CPPUNIT_TEST(test_contains);
         CPPUNIT_TEST(test_intersects);
+        CPPUNIT_TEST(test_intersect);
+        CPPUNIT_TEST(test_difference);
         CPPUNIT_TEST(test_enum_empty);
         CPPUNIT_TEST(test_enum_add);
         CPPUNIT_TEST(test_enum_contains);
@@ -65,6 +67,8 @@ public:
     void test_remove();
     void test_contains();
     void test_intersects();
+    void test_intersect();
+    void test_difference();
     void test_enum_empty();
     void test_enum_add();
     void test_enum_contains();
@@ -305,6 +309,32 @@ void TestInterval::test_intersects() {
     CPPUNIT_ASSERT(!x.intersects({{0,true},{1,false}}));
     CPPUNIT_ASSERT( x.intersects({{0,true},{1,true}}));
     CPPUNIT_ASSERT(!x.intersects({{12,true},{13,true}}));
+}
+
+void TestInterval::test_intersect() {
+    IS x, y;
+    x.add({{2,true},{8,false}});
+    x.add({{9,false},{13,true}});
+
+    y.add({{1,true},{3,true}});
+    y.add({{4,false},{5,true}});
+    y.add({{7,true},{10,false}});
+    y.add({{11,true},{12,false}});
+    CPPUNIT_ASSERT_EQUAL(S("{[2,3],(4,5],[7,8),(9,10),[11,12)}"), print(x.intersect(y)));
+    CPPUNIT_ASSERT_EQUAL(S("{[2,3],(4,5],[7,8),(9,10),[11,12)}"), print(y.intersect(x)));
+}
+
+void TestInterval::test_difference() {
+    IS x, y;
+    x.add({{2,true},{8,false}});
+    x.add({{9,false},{13,true}});
+
+    y.add({{1,true},{3,true}});
+    y.add({{4,false},{5,true}});
+    y.add({{7,true},{10,false}});
+    y.add({{11,true},{12,false}});
+    CPPUNIT_ASSERT_EQUAL(S("{(3,4],(5,7),[10,11),[12,13]}"), print(x.difference(y)));
+    CPPUNIT_ASSERT_EQUAL(S("{[1,2),[8,9]}"), print(y.difference(x)));
 }
 
 void TestInterval::test_enum_empty() {

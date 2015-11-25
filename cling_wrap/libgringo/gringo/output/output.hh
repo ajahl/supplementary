@@ -40,7 +40,7 @@ struct PlainLparseOutputter : LparseOutputter {
     virtual unsigned newUid();
     virtual void finishRules();
     virtual void printSymbol(unsigned atomUid, Value v);
-    virtual void printExternal(unsigned atomUid, ExternalType type);
+    virtual void printExternal(unsigned atomUid, TruthValue type);
     virtual void finishSymbols();
     virtual bool &disposeMinimize() { return disposeMinimize_; }
     virtual ~PlainLparseOutputter();
@@ -53,10 +53,11 @@ struct PlainLparseOutputter : LparseOutputter {
 struct StmHandler {
     virtual void operator()(Statement &x) = 0;
     // TODO: this should go into a statement!!
-    virtual void operator()(PredicateDomain::element_type &head, ExternalType type) = 0;
+    virtual void operator()(PredicateDomain::element_type &head, TruthValue type) = 0;
     virtual void incremental() { }
-    virtual void finish(PredDomMap &domains, OutputPredicates &outPreds) = 0;
-    virtual void atoms(int atomset, std::function<bool(unsigned)> const &isTrue, ValVec &atoms, PredDomMap const &domains, OutputPredicates const &outPreds) = 0;
+    virtual void finish(OutputPredicates &outPreds) = 0;
+    virtual void atoms(int atomset, std::function<bool(unsigned)> const &isTrue, ValVec &atoms, OutputPredicates const &outPreds) = 0;
+    virtual void simplify(AssignmentLookup assignment) = 0;
     virtual ~StmHandler() { }
 };
 using UStmHandler = std::unique_ptr<StmHandler>;
@@ -68,9 +69,10 @@ struct OutputBase {
     OutputBase(OutputPredicates &&outPreds, LparseOutputter &out, LparseDebug debug = LparseDebug::NONE);
     void output(Value const &val);
     
+    std::pair<unsigned, unsigned> simplify(AssignmentLookup assignment);
     void incremental();
-    // TODO: this should go into a statement!!
-    void external(PredicateDomain::element_type &head, ExternalType type);
+    void createExternal(PredicateDomain::element_type &head);
+    void assignExternal(PredicateDomain::element_type &head, TruthValue type);
     void output(UStm &&x);
     void output(Statement &x);
     void flush();
@@ -87,6 +89,7 @@ struct OutputBase {
     UStmVec           stms;
     UStmHandler       handler;
     OutputPredicates  outPreds;
+    OutputPredicates  outPredsForce;
 };
 
 } } // namespace Output Gringo

@@ -68,9 +68,9 @@ bool CheckLevel::check() {
         };
         std::sort(vars.begin(), vars.end(), cmp);
         std::ostringstream msg;
-        msg << loc << ": error: unsafe variables in\n  " << p << "\n";
+        msg << loc << ": error: unsafe variables in:\n  " << p << "\n";
         for (auto &x : vars) { msg << x->data->loc() << ": note: '" << x->data->name << "' is unsafe\n"; }
-        GRINGO_REPORT(ERROR) << msg.str();
+        GRINGO_REPORT(E_ERROR) << msg.str();
     }
     return vars.empty();
 }
@@ -96,9 +96,19 @@ UTermVec ToGroundArg::getGlobal(VarTermBoundVec const &vars) {
     }
     return global;
 }
+UTermVec ToGroundArg::getLocal(VarTermBoundVec const &vars) {
+    std::unordered_set<FWString> seen;
+    UTermVec local;
+    for (auto &occ : vars) {
+        if (occ.first->level != 0 && seen.emplace(occ.first->name).second) {
+            local.emplace_back(occ.first->clone());
+        }
+    }
+    return local;
+}
 UTerm ToGroundArg::newId(UTermVec &&global, Location const &loc, bool increment) {
     if (!global.empty()) { return make_locatable<FunctionTerm>(loc, newId(increment), std::move(global)); }
-    else                 { return make_locatable<ValTerm>(loc, newId(increment)); }
+    else                 { return make_locatable<ValTerm>(loc, Value::createId(newId(increment))); }
 }
 ToGroundArg::~ToGroundArg() { }
 

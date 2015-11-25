@@ -60,15 +60,7 @@ struct RuleRef : Statement {
 struct LparseRule : Statement {
     using HeadVec = std::vector<std::reference_wrapper<PredicateDomain::element_type>>;
 
-    LparseRule(ULitVec &&body);
-    LparseRule(ULit &&b1, ULit &&b2);
-    LparseRule(SAuxAtom head, ULit &&b1, ULit &&b2);
-    LparseRule(PredicateDomain::element_type &head, ULit &&b1, ULit &&b2 = nullptr);
-    LparseRule(SAuxAtom head, ULitVec &&body);
-    LparseRule(PredicateDomain::element_type &head, ULitVec &&body);
     LparseRule(HeadVec &&head, SAuxAtomVec &&auxHead, ULitVec &&body, bool choice);
-    LparseRule(HeadVec &&head, ULitVec &&body, bool choice);
-    LparseRule(SAuxAtomVec &&head, ULitVec &&body, bool choice);
     virtual void printPlain(std::ostream &out) const;
     virtual void toLparse(LparseTranslator &x);
     virtual void printLparse(LparseOutputter &out) const;
@@ -172,27 +164,56 @@ struct HeadAggregateRule : Statement {
 // }}}
 // {{{ declaration of DisjunctionState
 
+struct DisjunctionElement {
+    using ULitVecList = unique_list<ULitVec, identity<ULitVec>, value_hash<ULitVec>, value_equal_to<ULitVec>>;
+
+    DisjunctionElement(Value repr);
+    DisjunctionElement(DisjunctionElement &&);
+    DisjunctionElement &operator=(DisjunctionElement &&);
+    operator Value const & () const;
+    void print(std::ostream &out) const;
+
+    Value repr;
+    ULitVecList heads;
+    ULitVecList bodies;
+};
+
+inline std::ostream &operator<<(std::ostream &out, DisjunctionElement const &x) {
+    x.print(out);
+    return out;
+}
+
 struct DisjunctionState {
-    using ElemSet      = std::vector<std::pair<PredicateDomain::element_type *, ULitVec>>;
     using element_type = std::pair<Value const, DisjunctionState>;
+    using Elem         = DisjunctionElement;
+    using ElemSet      = unique_list<Elem, identity<Value>>;
 
     DisjunctionState();
-    DisjunctionState(unsigned generation);
-    void accumulate(PredicateDomain::element_type *head, LitVec const &lits);
-    bool defined() const;
-    unsigned generation() const;
+    unsigned generation() const { return _generation - 2; }
+    void generation(unsigned x) { _generation = x + 2; }
+    bool defined() const  { return _generation > 1; }
+    bool enqueued() const { return _generation == 1; }
+    void enqueue() {
+        assert(_generation == 0);
+        _generation = 1;
+    }
+    void dequeue() {
+        assert(_generation == 1);
+        _generation = 0;
+    }
     bool fact(bool) const;
     static element_type &ignore();
 
     ElemSet  elems;
-    unsigned _generation;
+    unsigned _generation = 0;
+    unsigned imported    = 0;
+    bool     todo        = false;
 };
 
 // }}}
 // {{{ declaration of DisjunctionRule
 
 struct DisjunctionRule : Statement {
-    static void printElem(std::ostream &out, DisjunctionState::ElemSet::value_type const &x);
     virtual void toLparse(LparseTranslator &x);
     virtual void printPlain(std::ostream &out) const;
     virtual void printLparse(LparseOutputter &out) const;
@@ -234,6 +255,69 @@ struct LparseMinimize : Statement {
     Value prio;
     ULitWeightVec lits;
 };
+
+// }}}
+// {{{ declaration of LparseRuleCreator
+
+struct LparseRuleCreator {
+    LparseRuleCreator(bool choice = false) : choice(choice) { }
+    LparseRuleCreator &addHead(ULitVec &&x) {
+        std::move(x.begin(), x.end(), std::back_inserter(head));
+        return *this;
+    }
+    LparseRuleCreator &addHead(ULit &&x) {
+        head.emplace_back(std::move(x));
+        return *this;
+    }
+    LparseRuleCreator &addHead(ULit const &x) {
+        head.emplace_back(get_clone(x));
+        return *this;
+    }
+    LparseRuleCreator &addBody(ULitVec &&x) {
+        std::move(x.begin(), x.end(), std::back_inserter(body));
+        return *this;
+    }
+    LparseRuleCreator &addBody(ULit &&x) {
+        body.emplace_back(std::move(x));
+        return *this;
+    }
+    LparseRuleCreator &addBody(ULit const &x) {
+        body.emplace_back(get_clone(x));
+        return *this;
+    }
+    void toLparse(LparseTranslator &x, bool shift=false) {
+        if (shift) {
+            for (auto &lit : head) {
+                if (x.isAtomFromPreviousStep(lit)) {
+                    lit->invert();
+                    lit->invert();
+                }
+            }
+        }
+        LparseRule::HeadVec predHead;
+        SAuxAtomVec auxHead;
+        for (auto &lit : head) {
+            if (PredicateDomain::element_type *atom = lit->isAtom()) {
+                predHead.emplace_back(*atom);
+            }
+            else if (SAuxAtom atom = lit->isAuxAtom()) {
+                auxHead.emplace_back(atom);;
+            }
+            else {
+                body.emplace_back(lit->negateLit(x));
+            }
+        }
+        LparseRule(std::move(predHead), std::move(auxHead), std::move(body), choice).toLparse(x);;
+        head.clear();
+        body.clear();
+    }
+
+    bool choice;
+    ULitVec head;
+    ULitVec body;
+};
+
+using LRC = LparseRuleCreator;
 
 // }}}
 

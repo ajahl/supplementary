@@ -133,6 +133,7 @@ void TestAspcomp13::test_aspcomp2013_01() {
 
 void TestAspcomp13::test_aspcomp2013_02() {
     // Author: Andrea Peano
+    Gringo::Test::Messages msg;
     CPPUNIT_ASSERT_EQUAL(
         S("[[valve(1,2),valve(1,4),valve(3,2),valve(4,2)]]"),
         IO::to_string(solve(
@@ -380,6 +381,7 @@ void TestAspcomp13::test_aspcomp2013_06() {
 
 void TestAspcomp13::test_aspcomp2013_07() {
     // Author: Giovambattista Ianni, Carlos Linares López*, Hootan Nakhost*
+    Gringo::Test::Messages msg;
     CPPUNIT_ASSERT_EQUAL(
         S(
             "[[drive(t0,a,b,10),drive(t0,a,b,2),drive(t0,a,b,6),drive(t0,b,a,5),drive(t0,b,a,9),load(p0,t0,a,1),load(p0,t0,b,7),unload(p0,t0,b,4)],"
@@ -487,6 +489,7 @@ void TestAspcomp13::test_aspcomp2013_07() {
 
 void TestAspcomp13::test_aspcomp2013_08() {
     // Author: Giovambattista Ianni, Carlos Linares López*, Hootan Nakhost*
+    Gringo::Test::Messages msg;
     CPPUNIT_ASSERT_EQUAL(
         S(
             "[[move(player_01,pos_2_2,pos_3_2,dir_right,3),move(player_01,pos_3_2,pos_2_2,dir_left,2),pushtogoal(player_01,stone_01,pos_2_2,pos_3_2,pos_4_2,dir_right,1)],"
@@ -979,7 +982,7 @@ void TestAspcomp13::test_aspcomp2013_13() {
             "\n"
             "state(1,full,X,Y) :- full(X,Y).\n"
             "state(1,empty,X,Y) :- empty(X,Y).\n", {"move("})));
-    CPPUNIT_ASSERT_EQUAL(S("[-:56:94-111: warning: atom is undefined:\n  checking_solution\n,-:51:72-93: warning: atom is undefined:\n  not checking_solution\n]"), IO::to_string(msg));
+    CPPUNIT_ASSERT_EQUAL(S("[-:56:22-23: info: global variable in tuple of aggregate element:\n  T\n,-:51:72-93: info: atom does not occur in any rule head:\n  not checking_solution\n,-:56:94-111: info: atom does not occur in any rule head:\n  checking_solution\n]"), IO::to_string(msg));
 }
 
 
@@ -1318,7 +1321,7 @@ void TestAspcomp13::test_aspcomp2013_16() {
             "   I != CI,\n"
             "   must_not_schedule(J).\n"
             , {"start(","on_instance(","penalty(","tot_penalty(","rescheduled("})));
-    CPPUNIT_ASSERT_EQUAL(S("[-:34:79-100: warning: atom is undefined:\n  not checking_solution\n,-:33:47-68: warning: atom is undefined:\n  not checking_solution\n]"), IO::to_string(msg));
+    CPPUNIT_ASSERT_EQUAL(S("[-:33:47-68: info: atom does not occur in any rule head:\n  not checking_solution\n,-:34:79-100: info: atom does not occur in any rule head:\n  not checking_solution\n]"), IO::to_string(msg));
 }
 
 // }}}
@@ -1721,6 +1724,7 @@ void TestAspcomp13::test_aspcomp2013_17() {
 
 void TestAspcomp13::test_aspcomp2013_19() {
     // Author: Stefan Ellmauthaler, Johannes Wallner
+    Gringo::Test::Messages msg;
     CPPUNIT_ASSERT_EQUAL(
         S(
             "[[accept(1),accept(2),reject(4)],"

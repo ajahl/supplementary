@@ -28,8 +28,11 @@
 #include "gringo/output/output.hh"
 #include "gringo/scripts.hh"
 
+#include "tests/gringo_module.hh"
+
 #include <clasp/clasp_facade.h>
 #include <clasp/solver.h>
+
 
 namespace Gringo { namespace Output { namespace Test {
 
@@ -70,22 +73,23 @@ inline Models solve(std::function<bool(OutputBase &, Scripts &, Input::Program&,
     OutputBase out({}, plo);
     Input::Program prg;
     Defines defs;
-    Scripts scripts;
+    Scripts scripts(Gringo::Test::getTestModule());
     Input::NongroundProgramBuilder pb(scripts, prg, out, defs);
     Input::NonGroundParser parser(pb);
-    parser.pushStream("-", make_unique<std::stringstream>(std::move(str)));
+    parser.pushStream("-", gringo_make_unique<std::stringstream>(std::move(str)));
     Models models;
     // grounder: parse
     parser.parse();
     // grounder: preprocess
+    defs.init();
     prg.rewrite(defs);
     prg.check();
     if (ground(out, scripts, prg, parser)) {
         Clasp::ClaspFacade libclasp;
         Clasp::ClaspConfig config;
-        config.enumerate.numModels = 0;
-        config.enumerate.opt = Clasp::EnumOptions::OptMode::enumerate;
-        config.enumerate.bound.insert(config.enumerate.bound.begin(), minimize.begin(), minimize.end());
+        config.solve.numModels = 0;
+        config.solve.optMode = Clasp::EnumOptions::OptMode::enumerate;
+        config.solve.optBound.assign(minimize.begin(), minimize.end());
         Clasp::Asp::LogicProgram &prg = libclasp.startAsp(config);
         prg.parseProgram(ss);
         libclasp.prepare();
@@ -93,7 +97,7 @@ inline Models solve(std::function<bool(OutputBase &, Scripts &, Input::Program&,
         libclasp.solve(&printer);
     }
     std::sort(models.begin(), models.end());
-    return std::move(models);
+    return models;
 }
 
 inline Models solve(std::string &&str, std::initializer_list<std::string> filter = {""}, std::initializer_list<Clasp::wsum_t> minimize = {}) {

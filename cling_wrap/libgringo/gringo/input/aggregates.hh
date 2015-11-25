@@ -29,6 +29,7 @@ namespace Gringo { namespace Input {
 // {{{ declaration of TupleBodyAggregate
 
 struct TupleBodyAggregate : BodyAggregate {
+    TupleBodyAggregate(NAF naf, bool removedAssignment, bool translated, AggregateFunction fun, BoundVec &&bounds, BodyAggrElemVec &&elems); // NOTE: private
     TupleBodyAggregate(NAF naf, AggregateFunction fun, BoundVec &&bounds, BodyAggrElemVec &&elems);
     virtual bool rewriteAggregates(UBodyAggrVec &aggr);
     virtual bool isAssignment() const;
@@ -39,9 +40,9 @@ struct TupleBodyAggregate : BodyAggregate {
     virtual size_t hash() const;
     virtual TupleBodyAggregate *clone() const;
     virtual void unpool(UBodyAggrVec &x, bool beforeRewrite);
-    virtual void simplify(Projections &project, Term::DotsMap &dots, Term::ScriptMap &scripts, unsigned &auxNum);
+    virtual bool simplify(Projections &project, SimplifyState &state, bool singleton);
     virtual void assignLevels(AssignLevel &lvl);
-    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, Literal::AssignVec &assign, unsigned &auxNum);
+    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, Literal::AssignVec &assign, AuxGen &auxGen);
     virtual bool hasPool(bool beforeRewrite) const;
     virtual bool check(ChkLvlVec &lvl) const;
     virtual void replace(Defines &dx);
@@ -49,6 +50,8 @@ struct TupleBodyAggregate : BodyAggregate {
     virtual ~TupleBodyAggregate();
 
     NAF naf;
+    bool removedAssignment = false;
+    bool translated = false;
     AggregateFunction fun;
     BoundVec bounds;
     BodyAggrElemVec elems;
@@ -68,9 +71,9 @@ struct LitBodyAggregate : BodyAggregate {
     virtual size_t hash() const;
     virtual LitBodyAggregate *clone() const;
     virtual void unpool(UBodyAggrVec &x, bool beforeRewrite);
-    virtual void simplify(Projections &project, Term::DotsMap &dots, Term::ScriptMap &scripts, unsigned &auxNum);
+    virtual bool simplify(Projections &project, SimplifyState &state, bool singleton);
     virtual void assignLevels(AssignLevel &lvl);
-    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, Literal::AssignVec &assign, unsigned &auxNum);
+    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, Literal::AssignVec &assign, AuxGen &auxGen);
     virtual bool hasPool(bool beforeRewrite) const;
     virtual bool check(ChkLvlVec &lvl) const;
     virtual void replace(Defines &dx);
@@ -87,7 +90,12 @@ struct LitBodyAggregate : BodyAggregate {
 // {{{ declaration of Conjunction
 
 struct Conjunction : BodyAggregate {
+    using ULitVecVec = std::vector<ULitVec>;
+    using Elem = std::pair<ULitVecVec, ULitVec>;
+    using ElemVec = std::vector<Elem>;
+
     Conjunction(ULit &&head, ULitVec &&cond);
+    Conjunction(ElemVec &&elems);
     virtual bool rewriteAggregates(UBodyAggrVec &aggr);
     virtual bool isAssignment() const;
     virtual void removeAssignment();
@@ -97,17 +105,16 @@ struct Conjunction : BodyAggregate {
     virtual size_t hash() const;
     virtual Conjunction *clone() const;
     virtual void unpool(UBodyAggrVec &x, bool beforeRewrite);
-    virtual void simplify(Projections &project, Term::DotsMap &dots, Term::ScriptMap &scripts, unsigned &auxNum);
+    virtual bool simplify(Projections &project, SimplifyState &state, bool singleton);
     virtual void assignLevels(AssignLevel &lvl);
-    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, Literal::AssignVec &assign, unsigned &auxNum);
+    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, Literal::AssignVec &assign, AuxGen &auxGen);
     virtual bool hasPool(bool beforeRewrite) const;
     virtual bool check(ChkLvlVec &lvl) const;
     virtual void replace(Defines &dx);
     virtual CreateBody toGround(ToGroundArg &x, Ground::UStmVec &stms) const;
     virtual ~Conjunction();
 
-    ULit head;
-    ULitVec cond;
+    ElemVec elems;
 };
 
 // }}}
@@ -115,6 +122,7 @@ struct Conjunction : BodyAggregate {
 
 struct SimpleBodyLiteral : BodyAggregate {
     SimpleBodyLiteral(ULit &&lit);
+    virtual unsigned projectScore() const { return lit->projectScore(); }
     virtual Location const &loc() const;
     virtual void loc(Location const &loc);
     virtual bool rewriteAggregates(UBodyAggrVec &aggr);
@@ -126,9 +134,9 @@ struct SimpleBodyLiteral : BodyAggregate {
     virtual size_t hash() const;
     virtual SimpleBodyLiteral *clone() const;
     virtual void unpool(UBodyAggrVec &x, bool beforeRewrite);
-    virtual void simplify(Projections &project, Term::DotsMap &dots, Term::ScriptMap &scripts, unsigned &auxNum);
+    virtual bool simplify(Projections &project, SimplifyState &state, bool singleton);
     virtual void assignLevels(AssignLevel &lvl);
-    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, Literal::AssignVec &assign, unsigned &auxNum);
+    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, Literal::AssignVec &assign, AuxGen &auxGen);
     virtual bool hasPool(bool beforeRewrite) const;
     virtual bool check(ChkLvlVec &lvl) const;
     virtual void replace(Defines &dx);
@@ -144,11 +152,11 @@ struct SimpleBodyLiteral : BodyAggregate {
 struct CSPElem {
     CSPElem(Location const &loc, UTermVec &&tuple, CSPAddTerm &&value, ULitVec &&cond);
     CSPElem(CSPElem &&x);
+    CSPElem &operator=(CSPElem &&x);
     ~CSPElem();
     void print(std::ostream &out) const;
     CSPElem clone() const;
-    size_t hash() const;
-    bool operator==(CSPElem const &other) const;
+    size_t hash() const; bool operator==(CSPElem const &other) const;
 
     Location   loc;
     UTermVec   tuple;
@@ -174,9 +182,9 @@ struct DisjointAggregate : BodyAggregate {
     virtual size_t hash() const;
     virtual DisjointAggregate *clone() const;
     virtual void unpool(UBodyAggrVec &x, bool beforeRewrite);
-    virtual void simplify(Projections &project, Term::DotsMap &dots, Term::ScriptMap &scripts, unsigned &auxNum);
+    virtual bool simplify(Projections &project, SimplifyState &state, bool singleton);
     virtual void assignLevels(AssignLevel &lvl);
-    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, Literal::AssignVec &assign, unsigned &auxNum);
+    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, Literal::AssignVec &assign, AuxGen &auxGen);
     virtual bool hasPool(bool beforeRewrite) const;
     virtual bool check(ChkLvlVec &lvl) const;
     virtual void replace(Defines &dx);
@@ -192,6 +200,7 @@ struct DisjointAggregate : BodyAggregate {
 // {{{ declaration of TupleHeadAggregate
 
 struct TupleHeadAggregate : HeadAggregate {
+    TupleHeadAggregate(AggregateFunction fun, bool translated, BoundVec &&bounds, HeadAggrElemVec &&elems); // NOTE: private
     TupleHeadAggregate(AggregateFunction fun, BoundVec &&bounds, HeadAggrElemVec &&elems);
     virtual UHeadAggr rewriteAggregates(UBodyAggrVec &aggr);
     virtual void collect(VarTermBoundVec &vars) const;
@@ -200,17 +209,18 @@ struct TupleHeadAggregate : HeadAggregate {
     virtual size_t hash() const;
     virtual TupleHeadAggregate *clone() const;
     virtual void unpool(UHeadAggrVec &x, bool beforeRewrite);
-    virtual void simplify(Projections &project, Term::DotsMap &dots, Term::ScriptMap &scripts, unsigned &auxNum);
+    virtual bool simplify(Projections &project, SimplifyState &state);
     virtual void assignLevels(AssignLevel &lvl);
     virtual UHeadAggr shiftHead(UBodyAggrVec &aggr);
-    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, unsigned &auxNum);
+    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, AuxGen &auxGen);
     virtual bool hasPool(bool beforeRewrite) const;
     virtual bool check(ChkLvlVec &lvl) const;
     virtual void replace(Defines &dx);
-    virtual CreateHead toGround(ToGroundArg &x, bool external) const;
+    virtual CreateHead toGround(ToGroundArg &x, Ground::UStmVec &stms, Ground::RuleType type) const;
     virtual ~TupleHeadAggregate();
 
     AggregateFunction fun;
+    bool translated;
     BoundVec bounds;
     HeadAggrElemVec elems;
 };
@@ -228,13 +238,13 @@ struct LitHeadAggregate : HeadAggregate {
     virtual size_t hash() const;
     virtual LitHeadAggregate *clone() const;
     virtual void unpool(UHeadAggrVec &x, bool beforeRewrite);
-    virtual void simplify(Projections &project, Term::DotsMap &dots, Term::ScriptMap &scripts, unsigned &auxNum);
+    virtual bool simplify(Projections &project, SimplifyState &state);
     virtual void assignLevels(AssignLevel &lvl);
-    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, unsigned &auxNum);
+    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, AuxGen &auxGen);
     virtual bool hasPool(bool beforeRewrite) const;
     virtual bool check(ChkLvlVec &lvl) const;
     virtual void replace(Defines &dx);
-    virtual CreateHead toGround(ToGroundArg &x, bool external) const;
+    virtual CreateHead toGround(ToGroundArg &x, Ground::UStmVec &stms, Ground::RuleType type) const;
     virtual ~LitHeadAggregate();
 
     AggregateFunction fun;
@@ -246,7 +256,13 @@ struct LitHeadAggregate : HeadAggregate {
 // {{{ declaration of Disjunction
 
 struct Disjunction : HeadAggregate {
+    using Head = std::pair<ULit, ULitVec>;
+    using HeadVec = std::vector<Head>;
+    using Elem = std::pair<HeadVec, ULitVec>;
+    using ElemVec = std::vector<Elem>;
+
     Disjunction(CondLitVec &&elems);
+    Disjunction(ElemVec &&elems);
     virtual UHeadAggr shiftHead(UBodyAggrVec &aggr);
     virtual UHeadAggr rewriteAggregates(UBodyAggrVec &aggr);
     virtual void collect(VarTermBoundVec &vars) const;
@@ -255,16 +271,16 @@ struct Disjunction : HeadAggregate {
     virtual size_t hash() const;
     virtual Disjunction *clone() const;
     virtual void unpool(UHeadAggrVec &x, bool beforeRewrite);
-    virtual void simplify(Projections &project, Term::DotsMap &dots, Term::ScriptMap &scripts, unsigned &auxNum);
+    virtual bool simplify(Projections &project, SimplifyState &state);
     virtual void assignLevels(AssignLevel &lvl);
-    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, unsigned &auxNum);
+    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, AuxGen &auxGen);
     virtual bool hasPool(bool beforeRewrite) const;
     virtual bool check(ChkLvlVec &lvl) const;
     virtual void replace(Defines &dx);
-    virtual CreateHead toGround(ToGroundArg &x, bool external) const;
+    virtual CreateHead toGround(ToGroundArg &x, Ground::UStmVec &stms, Ground::RuleType type) const;
     virtual ~Disjunction();
 
-    CondLitVec elems;
+    ElemVec elems;
 };
 
 // }}}
@@ -272,6 +288,7 @@ struct Disjunction : HeadAggregate {
 
 struct SimpleHeadLiteral : HeadAggregate {
     SimpleHeadLiteral(ULit &&lit);
+    virtual bool isPredicate() const { return true; } 
     virtual Location const &loc() const;
     virtual void loc(Location const &loc);
     virtual UHeadAggr shiftHead(UBodyAggrVec &aggr);
@@ -282,13 +299,13 @@ struct SimpleHeadLiteral : HeadAggregate {
     virtual size_t hash() const;
     virtual SimpleHeadLiteral *clone() const;
     virtual void unpool(UHeadAggrVec &x, bool beforeRewrite);
-    virtual void simplify(Projections &project, Term::DotsMap &dots, Term::ScriptMap &scripts, unsigned &auxNum);
+    virtual bool simplify(Projections &project, SimplifyState &state);
     virtual void assignLevels(AssignLevel &lvl);
-    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, unsigned &auxNum);
+    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, AuxGen &auxGen);
     virtual bool hasPool(bool beforeRewrite) const;
     virtual bool check(ChkLvlVec &lvl) const;
     virtual void replace(Defines &dx);
-    virtual CreateHead toGround(ToGroundArg &x, bool external) const;
+    virtual CreateHead toGround(ToGroundArg &x, Ground::UStmVec &stms, Ground::RuleType type) const;
     virtual Value isEDB() const;
     virtual ~SimpleHeadLiteral();
 

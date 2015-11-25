@@ -23,17 +23,18 @@
 
 #include <ostream>
 #include <gringo/locatable.hh>
+#include <gringo/control.hh>
 
 namespace Gringo {
 
-struct Control;
 struct PythonImpl;
 struct Python {
-    Python();
+    Python(GringoModule &module);
     bool exec(Location const &loc, FWString code);
-    ValVec call(Location const &loc, FWString name, ValVec const &args);
-    bool callable(FWString name);
+    ValVec call(Any const &context, Location const &loc, FWString name, ValVec const &args);
+    bool callable(Any const &context, FWString name);
     void main(Control &ctl);
+    static void *initlib(GringoModule &gringo);
     ~Python();
 
     static std::unique_ptr<PythonImpl> impl;
@@ -42,5 +43,3 @@ struct Python {
 } // namespace Gringo
 
 #endif // _GRINGO_PYTHON_HH
-
-

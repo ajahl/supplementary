@@ -19,14 +19,15 @@
 // }}}
 
 %require "2.5"
-//%define api.namespace {Gringo::Input::NonGroundGrammar}
-%define namespace "Gringo::Input::NonGroundGrammar"
+%define api.namespace {Gringo::Input::NonGroundGrammar}
+//%define namespace "Gringo::Input::NonGroundGrammar"
 //%define api.prefix {GringoNonGroundGrammar_}
 %name-prefix "GringoNonGroundGrammar_"
 //%define parse.error verbose
 %error-verbose
 //%define api.location.type {DefaultLocation}
-%define location_type "DefaultLocation"
+//%define location_type "DefaultLocation"
+%define api.location.type DefaultLocation
 %locations
 %defines
 %parse-param { Gringo::Input::NonGroundParser *lexer }
@@ -99,7 +100,7 @@ void NonGroundGrammar::parser::error(DefaultLocation const &l, std::string const
 // {{{ union type for stack elements
 %union
 {
-	IdVecUid idlist;
+    IdVecUid idlist;
     CSPLitUid csplit;
     CSPAddTermUid cspaddterm;
     CSPMulTermUid cspmulterm;
@@ -142,10 +143,10 @@ void NonGroundGrammar::parser::error(DefaultLocation const &l, std::string const
         Relation rel;
         TermUid term;
     } bound;
-	struct {
-		TermUid first;
-		TermUid second;
-	} termpair;
+    struct {
+        TermUid first;
+        TermUid second;
+    } termpair;
     unsigned uid;
     int num;
 }
@@ -153,8 +154,8 @@ void NonGroundGrammar::parser::error(DefaultLocation const &l, std::string const
 // }}}
 
 // TODO: improve naming scheme
-%type <term>            constterm term
-%type <termvec>         termvec ntermvec consttermvec unaryargvec optimizetuple
+%type <term>            constterm term tuple
+%type <termvec>         termvec ntermvec consttermvec unaryargvec optimizetuple tuplevec tuplevec_sem
 %type <termvecvec>      argvec constargvec
 %type <lit>             literal
 %type <litvec>          litvec nlitvec optcondition noptcondition
@@ -185,7 +186,7 @@ void NonGroundGrammar::parser::error(DefaultLocation const &l, std::string const
 %token
     ADD         "+"
     AND         "&"
-    ASSIGN      "="
+    EQ          "="
     AT          "@"
     BASE        "#base"
     BNOT        "~"
@@ -207,7 +208,6 @@ void NonGroundGrammar::parser::error(DefaultLocation const &l, std::string const
     DISJOINT    "#disjoint"
     DOT         "."
     DOTS        ".."
-    EQ          "=="
     END         0 "<EOF>"
     EXTERNAL    "#external"
     FALSE       "#false"
@@ -243,7 +243,7 @@ void NonGroundGrammar::parser::error(DefaultLocation const &l, std::string const
     SUMP        "#sum+"
     SUPREMUM    "#sup"
     TRUE        "#true"
-	BLOCK       "#program"
+    BLOCK       "#program"
     UBNOT
     UMINUS
     VBAR        "|"
@@ -308,26 +308,29 @@ identifier
 // {{{ constterms are terms without variables and pooling operators
 
 constterm
-    : constterm[a] XOR constterm[b]                       { $$ = BUILDER.term(@a + @b, BinOp::XOR, $a, $b); }
-    | constterm[a] QUESTION constterm[b]                  { $$ = BUILDER.term(@a + @b, BinOp::OR, $a, $b); }
-    | constterm[a] AND constterm[b]                       { $$ = BUILDER.term(@a + @b, BinOp::AND, $a, $b); }
-    | constterm[a] ADD constterm[b]                       { $$ = BUILDER.term(@a + @b, BinOp::ADD, $a, $b); }
-    | constterm[a] SUB constterm[b]                       { $$ = BUILDER.term(@a + @b, BinOp::SUB, $a, $b); }
-    | constterm[a] MUL constterm[b]                       { $$ = BUILDER.term(@a + @b, BinOp::MUL, $a, $b); }
-    | constterm[a] SLASH constterm[b]                     { $$ = BUILDER.term(@a + @b, BinOp::DIV, $a, $b); }
-    | constterm[a] MOD constterm[b]                       { $$ = BUILDER.term(@a + @b, BinOp::MOD, $a, $b); }
-    | constterm[a] POW constterm[b]                       { $$ = BUILDER.term(@a + @b, BinOp::POW, $a, $b); }
-    | SUB[l] constterm[a] %prec UMINUS                    { $$ = BUILDER.term(@l + @a, UnOp::NEG, $a); }
-    | BNOT[l] constterm[a] %prec UBNOT                    { $$ = BUILDER.term(@l + @a, UnOp::NOT, $a); }
-    | LPAREN[l] constargvec[a] RPAREN[r]                  { $$ = BUILDER.term(@l + @r, FWString(""), $a, false); }
-    | identifier[a] LPAREN constargvec[b] RPAREN[r]       { $$ = BUILDER.term(@a + @r, $a, $b, false); }
-    | AT[l] identifier[a] LPAREN constargvec[b] RPAREN[r] { $$ = BUILDER.term(@l + @r, $a, $b, true); }
-    | VBAR[l] constterm[a] VBAR[r]                        { $$ = BUILDER.term(@l + @r, UnOp::ABS, $a); }
-    | identifier[a]                                       { $$ = BUILDER.term(@a, Value(FWString($a))); }
-    | NUMBER[a]                                           { $$ = BUILDER.term(@a, Value($a)); }
-    | STRING[a]                                           { $$ = BUILDER.term(@a, Value(FWString($a), false)); }
-    | INFIMUM[a]                                          { $$ = BUILDER.term(@a, Value(true)); }
-    | SUPREMUM[a]                                         { $$ = BUILDER.term(@a, Value(false)); }
+    : constterm[a] XOR constterm[b]                    { $$ = BUILDER.term(@$, BinOp::XOR, $a, $b); }
+    | constterm[a] QUESTION constterm[b]               { $$ = BUILDER.term(@$, BinOp::OR, $a, $b); }
+    | constterm[a] AND constterm[b]                    { $$ = BUILDER.term(@$, BinOp::AND, $a, $b); }
+    | constterm[a] ADD constterm[b]                    { $$ = BUILDER.term(@$, BinOp::ADD, $a, $b); }
+    | constterm[a] SUB constterm[b]                    { $$ = BUILDER.term(@$, BinOp::SUB, $a, $b); }
+    | constterm[a] MUL constterm[b]                    { $$ = BUILDER.term(@$, BinOp::MUL, $a, $b); }
+    | constterm[a] SLASH constterm[b]                  { $$ = BUILDER.term(@$, BinOp::DIV, $a, $b); }
+    | constterm[a] MOD constterm[b]                    { $$ = BUILDER.term(@$, BinOp::MOD, $a, $b); }
+    | constterm[a] POW constterm[b]                    { $$ = BUILDER.term(@$, BinOp::POW, $a, $b); }
+    | SUB constterm[a] %prec UMINUS                    { $$ = BUILDER.term(@$, UnOp::NEG, $a); }
+    | BNOT constterm[a] %prec UBNOT                    { $$ = BUILDER.term(@$, UnOp::NOT, $a); }
+    | LPAREN RPAREN                                    { $$ = BUILDER.term(@$, BUILDER.termvec(), false); }
+    | LPAREN COMMA RPAREN                              { $$ = BUILDER.term(@$, BUILDER.termvec(), true); }
+    | LPAREN consttermvec[a] RPAREN                    { $$ = BUILDER.term(@$, $a, false); }
+    | LPAREN consttermvec[a] COMMA RPAREN              { $$ = BUILDER.term(@$, $a, true); }
+    | identifier[a] LPAREN constargvec[b] RPAREN       { $$ = BUILDER.term(@$, $a, $b, false); }
+    | AT[l] identifier[a] LPAREN constargvec[b] RPAREN { $$ = BUILDER.term(@$, $a, $b, true); }
+    | VBAR[l] constterm[a] VBAR                        { $$ = BUILDER.term(@$, UnOp::ABS, $a); }
+    | identifier[a]                                    { $$ = BUILDER.term(@$, Value::createId(FWString($a))); }
+    | NUMBER[a]                                        { $$ = BUILDER.term(@$, Value::createNum($a)); }
+    | STRING[a]                                        { $$ = BUILDER.term(@$, Value::createStr(FWString($a))); }
+    | INFIMUM[a]                                       { $$ = BUILDER.term(@$, Value::createInf()); }
+    | SUPREMUM[a]                                      { $$ = BUILDER.term(@$, Value::createSup()); }
     ;
 
 // {{{ arguments lists for functions in constant terms
@@ -347,29 +350,29 @@ constargvec
 // {{{ terms including variables
 
 term
-    : term[a] DOTS term[b]                           { $$ = BUILDER.term(@a + @b, $a, $b); }
-    | term[a] XOR term[b]                            { $$ = BUILDER.term(@a + @b, BinOp::XOR, $a, $b); }
-    | term[a] QUESTION term[b]                       { $$ = BUILDER.term(@a + @b, BinOp::OR, $a, $b); }
-    | term[a] AND term[b]                            { $$ = BUILDER.term(@a + @b, BinOp::AND, $a, $b); }
-    | term[a] ADD term[b]                            { $$ = BUILDER.term(@a + @b, BinOp::ADD, $a, $b); }
-    | term[a] SUB term[b]                            { $$ = BUILDER.term(@a + @b, BinOp::SUB, $a, $b); }
-    | term[a] MUL term[b]                            { $$ = BUILDER.term(@a + @b, BinOp::MUL, $a, $b); }
-    | term[a] SLASH term[b]                          { $$ = BUILDER.term(@a + @b, BinOp::DIV, $a, $b); }
-    | term[a] MOD term[b]                            { $$ = BUILDER.term(@a + @b, BinOp::MOD, $a, $b); }
-    | term[a] POW term[b]                            { $$ = BUILDER.term(@a + @b, BinOp::POW, $a, $b); }
-    | SUB[l] term[a] %prec UMINUS                    { $$ = BUILDER.term(@l + @a, UnOp::NEG, $a); }
-    | BNOT[l] term[a] %prec UBNOT                    { $$ = BUILDER.term(@l + @a, UnOp::NOT, $a); }
-    | LPAREN[l] argvec[a] RPAREN[r]                  { $$ = BUILDER.term(@l + @r, FWString(""), $a, false); }
-    | identifier[a] LPAREN argvec[b] RPAREN[r]       { $$ = BUILDER.term(@a + @r, $a, $b, false); }
-    | AT[l] identifier[a] LPAREN argvec[b] RPAREN[r] { $$ = BUILDER.term(@l + @r, $a, $b, true); }
-    | VBAR[l] unaryargvec[a] VBAR[r]                 { $$ = BUILDER.term(@l + @r, UnOp::ABS, $a); }
-    | identifier[a]                                  { $$ = BUILDER.term(@a, Value(FWString($a))); }
-    | NUMBER[a]                                      { $$ = BUILDER.term(@a, Value($a)); }
-    | STRING[a]                                      { $$ = BUILDER.term(@a, Value(FWString($a), false)); }
-    | INFIMUM[a]                                     { $$ = BUILDER.term(@a, Value(true)); }
-    | SUPREMUM[a]                                    { $$ = BUILDER.term(@a, Value(false)); }
-    | VARIABLE[a]                                    { $$ = BUILDER.term(@a, FWString($a)); }
-    | ANONYMOUS[a]                                   { $$ = BUILDER.term(@a, FWString("_")); }
+    : term[a] DOTS term[b]                     { $$ = BUILDER.term(@$, $a, $b); }
+    | term[a] XOR term[b]                      { $$ = BUILDER.term(@$, BinOp::XOR, $a, $b); }
+    | term[a] QUESTION term[b]                 { $$ = BUILDER.term(@$, BinOp::OR, $a, $b); }
+    | term[a] AND term[b]                      { $$ = BUILDER.term(@$, BinOp::AND, $a, $b); }
+    | term[a] ADD term[b]                      { $$ = BUILDER.term(@$, BinOp::ADD, $a, $b); }
+    | term[a] SUB term[b]                      { $$ = BUILDER.term(@$, BinOp::SUB, $a, $b); }
+    | term[a] MUL term[b]                      { $$ = BUILDER.term(@$, BinOp::MUL, $a, $b); }
+    | term[a] SLASH term[b]                    { $$ = BUILDER.term(@$, BinOp::DIV, $a, $b); }
+    | term[a] MOD term[b]                      { $$ = BUILDER.term(@$, BinOp::MOD, $a, $b); }
+    | term[a] POW term[b]                      { $$ = BUILDER.term(@$, BinOp::POW, $a, $b); }
+    | SUB term[a] %prec UMINUS                 { $$ = BUILDER.term(@$, UnOp::NEG, $a); }
+    | BNOT term[a] %prec UBNOT                 { $$ = BUILDER.term(@$, UnOp::NOT, $a); }
+    | LPAREN tuplevec[a] RPAREN                { $$ = BUILDER.pool(@$, $a); }
+    | identifier[a] LPAREN argvec[b] RPAREN    { $$ = BUILDER.term(@$, $a, $b, false); }
+    | AT identifier[a] LPAREN argvec[b] RPAREN { $$ = BUILDER.term(@$, $a, $b, true); }
+    | VBAR unaryargvec[a] VBAR                 { $$ = BUILDER.term(@$, UnOp::ABS, $a); }
+    | identifier[a]                            { $$ = BUILDER.term(@$, Value::createId(FWString($a))); }
+    | NUMBER[a]                                { $$ = BUILDER.term(@$, Value::createNum($a)); }
+    | STRING[a]                                { $$ = BUILDER.term(@$, Value::createStr(FWString($a))); }
+    | INFIMUM[a]                               { $$ = BUILDER.term(@$, Value::createInf()); }
+    | SUPREMUM[a]                              { $$ = BUILDER.term(@$, Value::createSup()); }
+    | VARIABLE[a]                              { $$ = BUILDER.term(@$, FWString($a)); }
+    | ANONYMOUS[a]                             { $$ = BUILDER.term(@$, FWString("_")); }
     ;
 
 // {{{ argument lists for unary operations
@@ -392,10 +395,28 @@ termvec
     |             { $$ = BUILDER.termvec(); }
     ;
 
+tuple
+    : ntermvec[a] COMMA { $$ = BUILDER.term(@$, $a, true); }
+    | ntermvec[a]       { $$ = BUILDER.term(@$, $a, false); }
+    |             COMMA { $$ = BUILDER.term(@$, BUILDER.termvec(), true); }
+    |                   { $$ = BUILDER.term(@$, BUILDER.termvec(), false); }
+
+tuplevec_sem
+    :                 tuple[b] SEM { $$ = BUILDER.termvec(BUILDER.termvec(), $b); }
+    | tuplevec_sem[a] tuple[b] SEM { $$ = BUILDER.termvec($a, $b); }
+
+tuplevec
+    :                 tuple[b] { $$ = BUILDER.termvec(BUILDER.termvec(), $b); }
+    | tuplevec_sem[a] tuple[b] { $$ = BUILDER.termvec($a, $b); }
+
 argvec
-    : termvec[a]               { $$ = BUILDER.termvecvec(BUILDER.termvecvec(), $a); }
+    :               termvec[b] { $$ = BUILDER.termvecvec(BUILDER.termvecvec(), $b); }
     | argvec[a] SEM termvec[b] { $$ = BUILDER.termvecvec($a, $b); }
     ;
+
+// TODO: I might have to create tuples differently
+//       parse a tuple as a list of terms
+//       each term is either a tuple or a term -> which afterwards is turned into a pool!
 
 // }}}
 // }}}
@@ -409,7 +430,6 @@ cmp
     | LEQ    { $$ = Relation::LEQ; }
     | EQ     { $$ = Relation::EQ; }
     | NEQ    { $$ = Relation::NEQ; }
-    | ASSIGN { $$ = Relation::ASSIGN; }
     ;
 
 atom
@@ -420,27 +440,33 @@ atom
     ;
 
 literal
-    : TRUE[a]                  { $$ = BUILDER.boollit(@$, true); }
-    | FALSE[a]                 { $$ = BUILDER.boollit(@$, false); }
-    | atom[a]                  { $$ = BUILDER.predlit(@$, NAF::POS, $a.second & 1, FWString($a.first), TermVecVecUid($a.second >> 1u)); }
-    | NOT[l] atom[a]           { $$ = BUILDER.predlit(@$, NAF::NOT, $a.second & 1, FWString($a.first), TermVecVecUid($a.second >> 1u)); }
-    | NOT[l] NOT atom[a]       { $$ = BUILDER.predlit(@$, NAF::NOTNOT, $a.second & 1, FWString($a.first), TermVecVecUid($a.second >> 1u)); }
-    | term[l] cmp[rel] term[r] { $$ = BUILDER.rellit(@$, $rel, $l, $r); }
-	| csp_literal[lit]         { $$ = BUILDER.csplit($lit); }
+    :         TRUE                     { $$ = BUILDER.boollit(@$, true); }
+    |     NOT TRUE                     { $$ = BUILDER.boollit(@$, false); }
+    | NOT NOT TRUE                     { $$ = BUILDER.boollit(@$, true); }
+    |         FALSE                    { $$ = BUILDER.boollit(@$, false); }
+    |     NOT FALSE                    { $$ = BUILDER.boollit(@$, true); }
+    | NOT NOT FALSE                    { $$ = BUILDER.boollit(@$, false); }
+    |         atom[a]                  { $$ = BUILDER.predlit(@$, NAF::POS, $a.second & 1, FWString($a.first), TermVecVecUid($a.second >> 1u)); }
+    |     NOT atom[a]                  { $$ = BUILDER.predlit(@$, NAF::NOT, $a.second & 1, FWString($a.first), TermVecVecUid($a.second >> 1u)); }
+    | NOT NOT atom[a]                  { $$ = BUILDER.predlit(@$, NAF::NOTNOT, $a.second & 1, FWString($a.first), TermVecVecUid($a.second >> 1u)); }
+    |         term[l] cmp[rel] term[r] { $$ = BUILDER.rellit(@$, $rel, $l, $r); }
+    |     NOT term[l] cmp[rel] term[r] { $$ = BUILDER.rellit(@$, neg($rel), $l, $r); }
+    | NOT NOT term[l] cmp[rel] term[r] { $$ = BUILDER.rellit(@$, $rel, $l, $r); }
+    | csp_literal[lit]                 { $$ = BUILDER.csplit($lit); }
     ;
 
 csp_mul_term
-	: CSP term[var] CSP_MUL term[coe] { $$ = BUILDER.cspmulterm(@$, $coe,                     $var); }
-	| term[coe] CSP_MUL CSP term[var] { $$ = BUILDER.cspmulterm(@$, $coe,                     $var); }
-	| CSP term[var]                   { $$ = BUILDER.cspmulterm(@$, BUILDER.term(@$, Value(1)), $var); }
-	| term[coe]                       { $$ = BUILDER.cspmulterm(@$, $coe); }
-	;
+    : CSP term[var] CSP_MUL term[coe] { $$ = BUILDER.cspmulterm(@$, $coe,                     $var); }
+    | term[coe] CSP_MUL CSP term[var] { $$ = BUILDER.cspmulterm(@$, $coe,                     $var); }
+    | CSP term[var]                   { $$ = BUILDER.cspmulterm(@$, BUILDER.term(@$, Value::createNum(1)), $var); }
+    | term[coe]                       { $$ = BUILDER.cspmulterm(@$, $coe); }
+    ;
 
 csp_add_term
-	: csp_add_term[add] CSP_ADD csp_mul_term[mul] { $$ = BUILDER.cspaddterm(@$, $add, $mul, true); }
-	| csp_add_term[add] CSP_SUB csp_mul_term[mul] { $$ = BUILDER.cspaddterm(@$, $add, $mul, false); }
-	| csp_mul_term[mul]                           { $$ = BUILDER.cspaddterm(@$, $mul); }
-	;
+    : csp_add_term[add] CSP_ADD csp_mul_term[mul] { $$ = BUILDER.cspaddterm(@$, $add, $mul, true); }
+    | csp_add_term[add] CSP_SUB csp_mul_term[mul] { $$ = BUILDER.cspaddterm(@$, $add, $mul, false); }
+    | csp_mul_term[mul]                           { $$ = BUILDER.cspaddterm(@$, $mul); }
+    ;
 
 csp_rel
     : CSP_GT  { $$ = Relation::GT; }
@@ -449,12 +475,12 @@ csp_rel
     | CSP_LEQ { $$ = Relation::LEQ; }
     | CSP_EQ  { $$ = Relation::EQ; }
     | CSP_NEQ { $$ = Relation::NEQ; }
-	;
+    ;
 
 csp_literal 
-	: csp_literal[lit] csp_rel[rel] csp_add_term[b] { $$ = BUILDER.csplit(@$, $lit, $rel, $b); }
-	| csp_add_term[a]  csp_rel[rel] csp_add_term[b] { $$ = BUILDER.csplit(@$, $a,   $rel, $b); }
-	;
+    : csp_literal[lit] csp_rel[rel] csp_add_term[b] { $$ = BUILDER.csplit(@$, $lit, $rel, $b); }
+    | csp_add_term[a]  csp_rel[rel] csp_add_term[b] { $$ = BUILDER.csplit(@$, $a,   $rel, $b); }
+    ;
 
 // }}}
 // {{{ aggregates
@@ -656,23 +682,23 @@ statement
 // {{{ CSP
 
 statement
-	: disjoint[hd] IF bodydot[body] { BUILDER.rule(@$, BUILDER.headlit(BUILDER.boollit(@hd, false)), BUILDER.disjoint($body, @hd, inv($hd.first), $hd.second)); }
-	| disjoint[hd] IF DOT           { BUILDER.rule(@$, BUILDER.headlit(BUILDER.boollit(@hd, false)), BUILDER.disjoint(BUILDER.body(), @hd, inv($hd.first), $hd.second)); }
-	| disjoint[hd] DOT              { BUILDER.rule(@$, BUILDER.headlit(BUILDER.boollit(@hd, false)), BUILDER.disjoint(BUILDER.body(), @hd, inv($hd.first), $hd.second)); }
-	;
+    : disjoint[hd] IF bodydot[body] { BUILDER.rule(@$, BUILDER.headlit(BUILDER.boollit(@hd, false)), BUILDER.disjoint($body, @hd, inv($hd.first), $hd.second)); }
+    | disjoint[hd] IF DOT           { BUILDER.rule(@$, BUILDER.headlit(BUILDER.boollit(@hd, false)), BUILDER.disjoint(BUILDER.body(), @hd, inv($hd.first), $hd.second)); }
+    | disjoint[hd] DOT              { BUILDER.rule(@$, BUILDER.headlit(BUILDER.boollit(@hd, false)), BUILDER.disjoint(BUILDER.body(), @hd, inv($hd.first), $hd.second)); }
+    ;
 
 // }}}
 // {{{ optimization
 
 optimizetuple
-	: COMMA ntermvec[vec] { $$ = $vec; }
-	|                     { $$ = BUILDER.termvec(); }
-	;
+    : COMMA ntermvec[vec] { $$ = $vec; }
+    |                     { $$ = BUILDER.termvec(); }
+    ;
 
 optimizeweight
-	: term[w] AT term[p] { $$ = {$w, $p}; }
-	| term[w]            { $$ = {$w, BUILDER.term(@$, Value(0))}; }
-	;
+    : term[w] AT term[p] { $$ = {$w, $p}; }
+    | term[w]            { $$ = {$w, BUILDER.term(@$, Value::createNum(0))}; }
+    ;
 
 optimizelitvec
     : literal[lit]                          { $$ = BUILDER.bodylit(BUILDER.body(), $lit); }
@@ -711,12 +737,12 @@ statement
 // {{{ visibility
 
 statement
-    : SHOWSIG IDENTIFIER[id] SLASH NUMBER[num] DOT     { BUILDER.showsig(@$, $id, $num, false); }
-    | SHOWSIG SUB IDENTIFIER[id] SLASH NUMBER[num] DOT { BUILDER.showsig(@$, "-"+*FWString($id), $num, false); }
-    | SHOW DOT                                         { BUILDER.showsig(@$, "", 0, false); }
+    : SHOWSIG IDENTIFIER[id] SLASH NUMBER[num] DOT     { BUILDER.showsig(@$, FWSignature($id, $num, false), false); }
+    | SHOWSIG SUB IDENTIFIER[id] SLASH NUMBER[num] DOT { BUILDER.showsig(@$, FWSignature(FWString($id), $num, true), false); }
+    | SHOW DOT                                         { BUILDER.showsig(@$, FWSignature("", 0, false), false); }
     | SHOW term[t] COLON bodydot[bd]                   { BUILDER.show(@$, $t, $bd, false); }
     | SHOW term[t] DOT                                 { BUILDER.show(@$, $t, BUILDER.body(), false); }
-    | SHOWSIG CSP IDENTIFIER[id] SLASH NUMBER[num] DOT { BUILDER.showsig(@$, $id, $num, true); }
+    | SHOWSIG CSP IDENTIFIER[id] SLASH NUMBER[num] DOT { BUILDER.showsig(@$, FWSignature($id, $num, false), true); }
     | SHOW CSP term[t] COLON bodydot[bd]               { BUILDER.show(@$, $t, $bd, true); }
     | SHOW CSP term[t] DOT                             { BUILDER.show(@$, $t, BUILDER.body(), true); }
     ;
@@ -725,11 +751,11 @@ statement
 // {{{ constants
 
 define
-    : identifier[uid] ASSIGN constterm[rhs] {  BUILDER.define(@$, $uid, $rhs, false); }
+    : identifier[uid] EQ constterm[rhs] {  BUILDER.define(@$, $uid, $rhs, false); }
     ;
 
 statement 
-    : CONST identifier[uid] ASSIGN constterm[rhs] DOT {  BUILDER.define(@$, $uid, $rhs, true); }
+    : CONST identifier[uid] EQ constterm[rhs] DOT {  BUILDER.define(@$, $uid, $rhs, true); }
     ;
 
 // }}}
@@ -752,19 +778,19 @@ statement
 // {{{ blocks
 
 nidlist 
-	: nidlist[list] COMMA IDENTIFIER[id] { $$ = BUILDER.idvec($list, @id, $id); }
-	| IDENTIFIER[id]                     { $$ = BUILDER.idvec(BUILDER.idvec(), @id, $id); }
-	;
+    : nidlist[list] COMMA IDENTIFIER[id] { $$ = BUILDER.idvec($list, @id, $id); }
+    | IDENTIFIER[id]                     { $$ = BUILDER.idvec(BUILDER.idvec(), @id, $id); }
+    ;
 
 idlist 
-	:               { $$ = BUILDER.idvec(); }
-	| nidlist[list] { $$ = $list; }
-	;
+    :               { $$ = BUILDER.idvec(); }
+    | nidlist[list] { $$ = $list; }
+    ;
 
 statement
-	: BLOCK IDENTIFIER[name] LPAREN idlist[args] RPAREN DOT { BUILDER.block(@$, $name, $args); }
-	| BLOCK IDENTIFIER[name] DOT                            { BUILDER.block(@$, $name, BUILDER.idvec()); }
-	;
+    : BLOCK IDENTIFIER[name] LPAREN idlist[args] RPAREN DOT { BUILDER.block(@$, $name, $args); }
+    | BLOCK IDENTIFIER[name] DOT                            { BUILDER.block(@$, $name, BUILDER.idvec()); }
+    ;
 
 // }}}
 // {{{ external

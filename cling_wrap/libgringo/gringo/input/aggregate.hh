@@ -28,6 +28,7 @@
 namespace Gringo { 
  
 namespace Ground {
+enum class RuleType : unsigned short;
 using ULitVec = std::vector<ULit>;
 struct Statement;
 using UStm = std::unique_ptr<Statement>;
@@ -38,21 +39,21 @@ namespace Input {
 
 // {{{ declaration of auxiliary types
 
-typedef std::pair<ULit, ULitVec> CondLit;
-typedef std::vector<CondLit> CondLitVec;
-typedef std::pair<UTermVec, ULitVec> BodyAggrElem;
-typedef std::vector<BodyAggrElem> BodyAggrElemVec;
+using CondLit = std::pair<ULit, ULitVec>;
+using CondLitVec = std::vector<CondLit>;
+using BodyAggrElem = std::pair<UTermVec, ULitVec>;
+using BodyAggrElemVec = std::vector<BodyAggrElem>;
 
-typedef std::tuple<UTermVec, ULit, ULitVec> HeadAggrElem;
-typedef std::vector<HeadAggrElem> HeadAggrElemVec;
+using HeadAggrElem = std::tuple<UTermVec, ULit, ULitVec>;
+using HeadAggrElemVec = std::vector<HeadAggrElem>;
 
 struct BodyAggregate;
-typedef std::unique_ptr<BodyAggregate> UBodyAggr;
-typedef std::vector<UBodyAggr> UBodyAggrVec;
+using UBodyAggr = std::unique_ptr<BodyAggregate>;
+using UBodyAggrVec = std::vector<UBodyAggr>;
 
 struct HeadAggregate;
-typedef std::unique_ptr<HeadAggregate> UHeadAggr;
-typedef std::vector<UHeadAggr> UHeadAggrVec;
+using UHeadAggr = std::unique_ptr<HeadAggregate>;
+using UHeadAggrVec = std::vector<UHeadAggr>;
 
 // }}}
 
@@ -103,12 +104,13 @@ using CreateStm     = std::function<Ground::UStm (Ground::ULitVec &&)>;
 using CreateStmVec  = std::vector<CreateStm>;
 using CreateBody    = std::pair<CreateLit, CreateStmVec>;
 using CreateBodyVec = std::vector<CreateBody>;
-using CreateHead    = std::pair<CreateStm, CreateBody>;
+using CreateHead    = CreateStm;
 
 struct ToGroundArg {
     ToGroundArg(unsigned &auxNames, PredDomMap &domains);
     FWString newId(bool increment = true);
     UTermVec getGlobal(VarTermBoundVec const &vars);
+    UTermVec getLocal(VarTermBoundVec const &vars);
     UTerm newId(UTermVec &&global, Location const &loc, bool increment = true);
     template <class T>
     UTerm newId(T const &x) {
@@ -127,18 +129,19 @@ struct ToGroundArg {
 // {{{ declaration of BodyAggregate
 
 struct BodyAggregate : Printable, Hashable, Locatable, Clonable<BodyAggregate>, Comparable<BodyAggregate> {
+    virtual unsigned projectScore() const { return 2; }
     //! Unpool the aggregate and aggregate elements.
     virtual void unpool(UBodyAggrVec &x, bool beforeRewrite) = 0;
     //! Simplify the aggregate and aggregate elements.
     //! \pre Must be called after unpool.
-    virtual void simplify(Projections &project, Term::DotsMap &dots, Term::ScriptMap &scripts, unsigned &auxNum) = 0;
+    virtual bool simplify(Projections &project, SimplifyState &state, bool singleton) = 0;
     //! Assign levels to variables using the VarCollector.
     //! \pre Must be called after simplify.
     virtual void assignLevels(AssignLevel &lvl) = 0;
     virtual bool check(ChkLvlVec &lvl) const = 0;
     //! Rewrite arithmetics.
     //! \pre Requires variables assigned to levels.
-    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, Literal::AssignVec &assign, unsigned &auxNum) = 0;
+    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, Literal::AssignVec &assign, AuxGen &auxGen) = 0;
     //! Rewrite aggregates.
     //! Separates assignment aggregates from ordinary bounds, and
     //! transforms literal aggregates into tuple aggregates.
@@ -164,19 +167,19 @@ struct BodyAggregate : Printable, Hashable, Locatable, Clonable<BodyAggregate>, 
 // {{{ declaration of HeadAggregate
 
 struct HeadAggregate : Printable, Hashable, Locatable, Clonable<HeadAggregate>, Comparable<HeadAggregate> {
-
+    virtual bool isPredicate() const { return false; } 
     //! Unpool the aggregate and aggregate elements.
     virtual void unpool(UHeadAggrVec &x, bool beforeRewrite) = 0;
     //! Simplify the aggregate and aggregate elements.
     //! \pre Must be called after unpool.
-    virtual void simplify(Projections &project, Term::DotsMap &dots, Term::ScriptMap &scripts, unsigned &auxNum) = 0;
+    virtual bool simplify(Projections &project, SimplifyState &state) = 0;
     //! Assign levels to variables using the VarCollector.
     //! \pre Must be called after simplify.
     virtual void assignLevels(AssignLevel &lvl) = 0;
     virtual bool check(ChkLvlVec &lvl) const = 0;
     //! Rewrite arithmetics.
     //! \pre Requires variables assigned to levels.
-    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, unsigned &auxNum) = 0;
+    virtual void rewriteArithmetics(Term::ArithmeticsMap &arith, AuxGen &auxGen) = 0;
     virtual UHeadAggr rewriteAggregates(UBodyAggrVec &aggr) = 0;
     virtual UHeadAggr shiftHead(UBodyAggrVec &aggr) = 0;
     //! Collects all variables occuring in the aggregate.
@@ -185,7 +188,7 @@ struct HeadAggregate : Printable, Hashable, Locatable, Clonable<HeadAggregate>, 
     virtual void collect(VarTermBoundVec &vars) const = 0;
     virtual bool hasPool(bool beforeRewrite) const = 0;
     virtual void replace(Defines &dx) = 0;
-    virtual CreateHead toGround(ToGroundArg &x, bool external) const = 0;
+    virtual CreateHead toGround(ToGroundArg &x, Ground::UStmVec &stms, Ground::RuleType type) const = 0;
     virtual Value isEDB() const;
     virtual ~HeadAggregate() { }
 };

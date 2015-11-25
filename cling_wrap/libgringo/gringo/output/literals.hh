@@ -43,19 +43,23 @@ using SAuxAtomVec = std::vector<SAuxAtom>;
 std::ostream &operator<<(std::ostream &out, AuxAtom const &x);
 
 struct AuxLiteral : Literal {
-    AuxLiteral(SAuxAtom atom, bool negative);
+    AuxLiteral(SAuxAtom atom, NAF naf);
+    virtual SAuxAtom isAuxAtom() const;
     virtual AuxLiteral *clone() const;
     virtual ULit toLparse(LparseTranslator &x);
     virtual void printPlain(std::ostream &out) const;
     virtual bool isIncomplete() const;
     virtual int lparseUid(LparseOutputter &out) const;
-    virtual void makeEqual(ULit &&lit, LparseTranslator &x) const;
     virtual size_t hash() const;
     virtual bool operator==(Literal const &x) const;
+    virtual ULit negateLit(LparseTranslator &x) const;
+    virtual bool invertible() const;
+    virtual void invert();
+    virtual bool isPositive() const { return naf == NAF::POS; }
     virtual ~AuxLiteral();
     
     SAuxAtom atom;
-    bool     negative;
+    NAF      naf;
 };
 
 // }}}
@@ -68,9 +72,9 @@ struct BooleanLiteral : Literal {
     virtual void printPlain(std::ostream &out) const;
     virtual bool isIncomplete() const;
     virtual int lparseUid(LparseOutputter &out) const;
-    virtual void makeEqual(ULit &&lit, LparseTranslator &x) const;
     virtual size_t hash() const;
     virtual bool operator==(Literal const &x) const;
+    virtual bool isPositive() const { return false; }
     virtual ~BooleanLiteral();
 
     bool value;
@@ -82,16 +86,19 @@ struct BooleanLiteral : Literal {
 struct PredicateLiteral : Literal {
     PredicateLiteral();
     PredicateLiteral(NAF naf, PredicateDomain::element_type &repr);
+    virtual PredicateDomain::element_type *isAtom() const;
+    virtual ULit negateLit(LparseTranslator &x) const;
     virtual void printPlain(std::ostream &out) const;
     virtual bool isIncomplete() const;
     virtual PredicateLiteral *clone() const;
     virtual ULit toLparse(LparseTranslator &x);
-    virtual void makeEqual(ULit &&lit, LparseTranslator &x) const;
     virtual int lparseUid(LparseOutputter &out) const;
     virtual size_t hash() const;
     virtual bool operator==(Literal const &x) const;
-    bool invertible() const;
-    void invert();
+    virtual bool invertible() const;
+    virtual void invert();
+    virtual bool isPositive() const { return naf == NAF::POS; }
+    virtual std::pair<bool, TruthValue> getTruth(AssignmentLookup);
     virtual ~PredicateLiteral();
 
     NAF                            naf  = NAF::POS;
@@ -110,7 +117,6 @@ Value getWeight(AggregateFunction fun, FWValVec const &x);
 using BdAggrElemSet = unique_list<std::pair<FWValVec, std::vector<ULitVec>>, extract_first<FWValVec>>;
 
 struct BodyAggregateState {
-    enum State { UNKNOWN, DEFINED, OPEN };
     using Bounds       = IntervalSet<Value>;
     using element_type = std::pair<Value const, BodyAggregateState>;
 
@@ -136,28 +142,33 @@ struct BodyAggregateState {
         Value::POD valMax;
     };
     unsigned _generation = 0;
-    State    state       = OPEN;
-    bool     _positive   = false;
-    bool     _fact       = false;
+    bool     _defined    = false; // aggregate is false if _defined == false (might be uninitialized in this state)
+    bool     _positive   = false; // wheather the aggregate is monotone
+    bool     _fact       = false; // wheather the current (possibly) incomplete aggregate is a fact
+    bool     enqueued    = false; // wheather this state is in the todo list
+    bool     initialized = false; // wheather this aggregate state has been initialized
 };
 
 // }}}
 // {{{ declaration of BodyAggregate
 
 struct BodyAggregate : Literal {
+    using Interval = IntervalSet<Value>::Interval;
     using BoundsVec = std::vector<std::pair<Relation, Value>>;
-    BodyAggregate(Location const *&loc);
+    using ConjunctiveBounds = std::vector<std::pair<Interval, Interval>>;
+    using ULitValVec = std::vector<std::pair<ULit,Value>>;
+
+    BodyAggregate();
+    ULitValVec toLparseElems(LparseTranslator &x, bool equivalence);
     virtual void printPlain(std::ostream &out) const;
     virtual bool isIncomplete() const;
     virtual BodyAggregate *clone() const;
     virtual size_t hash() const;
     virtual bool operator==(Literal const &) const;
     virtual ULit toLparse(LparseTranslator &x);
-    virtual void makeEqual(ULit &&lit, LparseTranslator &x) const;
     virtual int lparseUid(LparseOutputter &out) const;
     virtual ~BodyAggregate();
 
-    Location const                  *&loc;
     BoundsVec                         bounds;
     NAF                               naf        = NAF::POS;
     AggregateFunction                 fun        = AggregateFunction::COUNT;
@@ -172,8 +183,8 @@ struct AssignmentAggregateState {
     using ValSet = std::set<Value>;
     struct Data {
         BdAggrElemSet elems;
-        unsigned      offset = 0;
-        bool          fact   = false;
+        bool          enqueued = false;
+        bool          fact     = false;
     };
     using element_type = std::pair<Value const, AssignmentAggregateState>;
 
@@ -193,18 +204,16 @@ struct AssignmentAggregateState {
 // {{{ declaration of AssignmentAggregate
 
 struct AssignmentAggregate : Literal {
-    AssignmentAggregate(Location const *&loc);
+    AssignmentAggregate();
     virtual void printPlain(std::ostream &out) const;
     virtual bool isIncomplete() const;
     virtual AssignmentAggregate *clone() const;
     virtual size_t hash() const;
     virtual bool operator==(Literal const &) const;
     virtual ULit toLparse(LparseTranslator &x);
-    virtual void makeEqual(ULit &&lit, LparseTranslator &x) const;
     virtual int lparseUid(LparseOutputter &out) const;
     virtual ~AssignmentAggregate();
 
-    Location const                        *&loc;
     AggregateFunction                       fun        = AggregateFunction::COUNT;
     bool                                    incomplete = false;
     AssignmentAggregateState::element_type *repr       = nullptr;
@@ -214,13 +223,17 @@ struct AssignmentAggregate : Literal {
 // {{{ declaration of ConjunctionElem
 
 struct ConjunctionElem {
-    ConjunctionElem(PredicateDomain::element_type* head, ULitVec &&body);
-    size_t hash() const;
-    bool operator==(ConjunctionElem const &x) const;
+    using ULitVecList = unique_list<ULitVec, identity<ULitVec>, value_hash<ULitVec>, value_equal_to<ULitVec>>;
+
+    ConjunctionElem(Value repr);
+    operator Value const & () const;
+    bool needsSemicolon() const;
+    bool isSimple() const;
     void print(std::ostream &out) const;
 
-    PredicateDomain::element_type* head;
-    ULitVec                        body;
+    Value   repr;
+    ULitVecList heads;
+    ULitVecList bodies;
 };
 
 inline std::ostream &operator<<(std::ostream &out, ConjunctionElem const &x) {
@@ -234,21 +247,30 @@ inline std::ostream &operator<<(std::ostream &out, ConjunctionElem const &x) {
 struct ConjunctionState {
     using element_type = std::pair<Value const, ConjunctionState>;
     using Elem         = ConjunctionElem;
-    using ElemSet      = unique_list<Elem, identity<Elem>, call_hash<Elem>>;
+    using ElemSet      = unique_list<Elem, identity<Value>>;
     using BlockSet     = std::unordered_set<Value>;
 
-    bool fact(bool recursive) const;
-    unsigned generation() const;
-    void generation(unsigned x);
+    bool fact(bool recursive) const { return _fact && !recursive; }
+    unsigned generation() const { return _generation - 2; }
+    void generation(unsigned x) { _generation = x + 2; }
     bool isFalse();
     static element_type &ignore();
-    bool defined() const;
-
-    BlockSet blocked;
+    bool defined() const  { return _generation > 1; }
+    bool enqueued() const { return _generation == 1; }
+    void enqueue() {
+        assert(_generation == 0);
+        _generation = 1;
+    }
+    void dequeue() {
+        assert(_generation == 1);
+        _generation = 0;
+    }
     ElemSet  elems;
-    SAuxAtom bdLit;
+    ULit     bdLit;
     bool     _fact       = true;
-    unsigned _generation = 0; // 0 = undefined, 1 = enqueued
+    bool     incomplete  = false;
+    unsigned _generation = 0; // 0 = undefined, 1 enqueued, > 0 defined
+    unsigned numBlocked  = 0;
 };
 
 // }}}
@@ -261,11 +283,10 @@ struct Conjunction : Literal {
     virtual size_t hash() const;
     virtual bool operator==(Literal const &) const;
     virtual ULit toLparse(LparseTranslator &x);
-    virtual void makeEqual(ULit &&lit, LparseTranslator &x) const;
     virtual int lparseUid(LparseOutputter &out) const;
+    virtual bool needsSemicolon() const;
     virtual ~Conjunction();
 
-    bool                            incomplete = false;
     ConjunctionState::element_type *repr       = nullptr;
 };
 
@@ -298,6 +319,7 @@ struct DisjointState {
     ~DisjointState();
 
     DisjointElemSet elems;
+    bool     enqueued = false;
     unsigned _generation = 0;
 };
 
@@ -312,7 +334,6 @@ struct DisjointLiteral : Literal {
     virtual size_t hash() const;
     virtual bool operator==(Literal const &) const;
     virtual ULit toLparse(LparseTranslator &x);
-    virtual void makeEqual(ULit &&lit, LparseTranslator &x) const;
     virtual int lparseUid(LparseOutputter &out) const;
     virtual ~DisjointLiteral();
 
@@ -334,10 +355,11 @@ struct CSPLiteral : Literal {
     virtual size_t hash() const;
     virtual bool operator==(Literal const &) const;
     virtual ULit toLparse(LparseTranslator &x);
-    virtual void makeEqual(ULit &&lit, LparseTranslator &x) const;
     virtual int lparseUid(LparseOutputter &out) const;
     virtual bool isBound(Value &value, bool negate) const;
     virtual void updateBound(CSPBound &bounds, bool negate) const;
+    virtual bool invertible() const;
+    virtual void invert();
     virtual ~CSPLiteral();
     CSPGroundLit ground;
 };

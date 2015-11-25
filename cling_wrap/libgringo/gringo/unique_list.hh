@@ -188,7 +188,17 @@ public:
         , _front(list._front)
         , _back(list._back)
         , _buckets(std::move(list._buckets)) { list.clear(); }
-
+    unique_list &operator=(unique_list &&list) {
+        static_cast<Hasher&>(*this) = std::move(list);
+        static_cast<EqualTo&>(*this) = std::move(list);
+        _size = list._size;
+        _reserved = list._reserved;
+        _front = list._front;
+        _back = list._back;
+        _buckets = std::move(list._buckets);
+        list.clear();
+        return *this;
+    }
     unsigned reserved() const      { return _reserved; }
     unsigned size() const          { return _size; }
     bool empty() const             { return !_size; }
@@ -248,7 +258,7 @@ public:
         return ret;
     }
     size_type erase(key_type const &x) {
-        auto it(find(x));
+        auto it(static_cast<unique_list const*>(this)->find(x));
         if (it != end()) {
             erase(it);
             return 1;

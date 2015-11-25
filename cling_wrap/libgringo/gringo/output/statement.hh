@@ -45,15 +45,20 @@ using DisjointCons     = std::vector<std::pair<FWValVec, std::vector<DisjointEle
 using OutputPredicates = std::vector<std::tuple<Location, FWSignature, bool>>;
 
 struct LparseTranslator {
+    ULit negate(ULit &lit);
+    virtual bool isAtomFromPreviousStep(ULit const &lit) = 0;
     virtual void addMinimize(MinimizeList &&x) = 0;
     virtual void addBounds(Value value, std::vector<CSPBound> bounds) = 0;
     virtual void addLinearConstraint(SAuxAtom head, CoefVarVec &&vars, int bound) = 0;
     virtual void addDisjointConstraint(SAuxAtom head, DisjointCons &&elem) = 0;
     virtual unsigned auxAtom() = 0;
     virtual void translate() = 0;
-    virtual void outputSymbols(LparseOutputter &out, PredDomMap const &domains, OutputPredicates const &outPreds) = 0;
+    virtual void outputSymbols(LparseOutputter &out, OutputPredicates const &outPreds) = 0;
     virtual void operator()(Statement &x) = 0;
     virtual bool minimizeChanged() const = 0;
+    virtual ULit makeAux(NAF naf=NAF::POS) = 0;
+    virtual ULit getTrueLit() = 0;
+    virtual void simplify(AssignmentLookup assignment) = 0;
     virtual ~LparseTranslator() { }
 };
 

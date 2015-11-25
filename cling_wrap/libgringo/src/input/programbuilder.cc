@@ -1,27 +1,26 @@
-// {{{ GPL License 
+    // {{{ GPL License 
 
-// This file is part of gringo - a grounder for logic programs.
-// Copyright (C) 2013  Roland Kaminski
+    // This file is part of gringo - a grounder for logic programs.
+    // Copyright (C) 2013  Roland Kaminski
 
-// This program is free software: you can redistribute it and/or modify
-// it under the terms of the GNU General Public License as published by
-// the Free Software Foundation, either version 3 of the License, or
-// (at your option) any later version.
+    // This program is free software: you can redistribute it and/or modify
+    // it under the terms of the GNU General Public License as published by
+    // the Free Software Foundation, either version 3 of the License, or
+    // (at your option) any later version.
 
-// This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
-// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-// GNU General Public License for more details.
+    // This program is distributed in the hope that it will be useful,
+    // but WITHOUT ANY WARRANTY; without even the implied warranty of
+    // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    // GNU General Public License for more details.
 
-// You should have received a copy of the GNU General Public License
-// along with this program.  If not, see <http://www.gnu.org/licenses/>.
+    // You should have received a copy of the GNU General Public License
+    // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-// }}}
+    // }}}
 
 #include "gringo/input/programbuilder.hh"
 #include "gringo/input/literals.hh"
 #include "gringo/input/aggregates.hh"
-#include "gringo/input/statements.hh"
 #include "gringo/input/program.hh"
 #include "gringo/output/output.hh"
 #include "gringo/scripts.hh"
@@ -30,11 +29,12 @@ namespace Gringo { namespace Input {
 
 // {{{ definition of NongroundProgramBuilder
 
-NongroundProgramBuilder::NongroundProgramBuilder(Scripts &scripts, Program &prg, Output::OutputBase &out, Defines &defs)
-    : scripts_(scripts)
-    , prg_(prg)
-    , out(out)
-    , defs_(defs) { }
+NongroundProgramBuilder::NongroundProgramBuilder(Scripts &scripts, Program &prg, Output::OutputBase &out, Defines &defs, bool rewriteMinimize)
+: scripts_(scripts)
+, prg_(prg)
+, out(out)
+, defs_(defs)
+, rewriteMinimize_(rewriteMinimize) { }
 
 // {{{ terms
 
@@ -74,13 +74,12 @@ TermUid NongroundProgramBuilder::term(Location const &loc, TermUid a, TermUid b)
 }
 
 TermUid NongroundProgramBuilder::term(Location const &loc, FWString name, TermVecVecUid a, bool lua) {
+    assert(*name != "");
     auto create = [&lua, &name, &loc](UTermVec &&vec) -> UTerm {
         // lua terms
         if (lua) { return make_locatable<LuaTerm>(loc, name, std::move(vec)); }
-        // one elementary tuples
-        else if (*name == "" && vec.size() == 1) { return UTerm(std::move(vec.front())); }
         // constant symbols
-        else if (*name != "" && vec.empty()) { return make_locatable<ValTerm>(loc, Value(name)); }
+        else if (vec.empty()) { return make_locatable<ValTerm>(loc, Value::createId(name)); }
         // function terms
         else { return make_locatable<FunctionTerm>(loc, name, std::move(vec)); }
     };
@@ -93,6 +92,16 @@ TermUid NongroundProgramBuilder::term(Location const &loc, FWString name, TermVe
         for (auto &terms : vec) { pool.emplace_back(create(std::move(terms))); }
         return terms_.insert(make_locatable<PoolTerm>(loc, std::move(pool)));
     }
+}
+
+TermUid NongroundProgramBuilder::term(Location const &loc, TermVecUid args, bool forceTuple) {
+    UTermVec a(termvecs_.erase(args));
+    UTerm ret(!forceTuple && a.size() == 1 ? std::move(a.front()) : make_locatable<FunctionTerm>(loc, "", std::move(a)));
+    return terms_.insert(std::move(ret));
+}
+
+TermUid NongroundProgramBuilder::pool(Location const &loc, TermVecUid args) {
+    return terms_.insert(make_locatable<PoolTerm>(loc, termvecs_.erase(args)));
 }
 
 // }}}
@@ -170,14 +179,16 @@ TermVecVecUid NongroundProgramBuilder::termvecvec(TermVecVecUid uid, TermVecUid 
 // {{{ literals
 
 LitUid NongroundProgramBuilder::boollit(Location const &loc, bool type) {
-    return rellit(loc, type ? Relation::EQ : Relation::NEQ, term(loc, Value(0)), term(loc, Value(0)));
+    return rellit(loc, type ? Relation::EQ : Relation::NEQ, term(loc, Value::createNum(0)), term(loc, Value::createNum(0)));
 }
 
 LitUid NongroundProgramBuilder::predlit(Location const &loc, NAF naf, bool neg, FWString name, TermVecVecUid tvvUid) {
     if (neg) {
         for (auto &x : termvecvecs_[tvvUid]) { prg_.addClassicalNegation(Signature(name, x.size())); }
     }
-    return lits_.insert(make_locatable<PredicateLiteral>(loc, naf, terms_.erase(term(loc, FWString(neg ? "-" + *name : name ), tvvUid, false))));
+    TermUid t = term(loc, name, tvvUid, false);
+    if (neg) { t = term(loc, UnOp::NEG, t); }
+    return lits_.insert(make_locatable<PredicateLiteral>(loc, naf, terms_.erase(t)));
 }
 
 LitUid NongroundProgramBuilder::rellit(Location const &loc, Relation rel, TermUid termUidLeft, TermUid termUidRight) {
@@ -237,7 +248,7 @@ BoundVecUid NongroundProgramBuilder::boundvec() {
 }
 
 BoundVecUid NongroundProgramBuilder::boundvec(BoundVecUid uid, Relation rel, TermUid term) {
-    bounds_[uid].emplace_back(rel, std::move(terms_.erase(term)));
+    bounds_[uid].emplace_back(rel, terms_.erase(term));
     return uid;
 }
 
@@ -249,7 +260,7 @@ BdLitVecUid NongroundProgramBuilder::body() {
 }
 
 BdLitVecUid NongroundProgramBuilder::bodylit(BdLitVecUid body, LitUid bodylit) {
-    bodies_[body].push_back(make_unique<SimpleBodyLiteral>(lits_.erase(bodylit)));
+    bodies_[body].push_back(gringo_make_unique<SimpleBodyLiteral>(lits_.erase(bodylit)));
     return body;
 }
 
@@ -278,7 +289,7 @@ BdLitVecUid NongroundProgramBuilder::disjoint(BdLitVecUid body, Location const &
 // {{{ rule heads
 
 HdLitUid NongroundProgramBuilder::headlit(LitUid lit) {
-    return heads_.insert(make_unique<SimpleHeadLiteral>(lits_.erase(lit)));
+    return heads_.insert(gringo_make_unique<SimpleHeadLiteral>(lits_.erase(lit)));
 }
 
 HdLitUid NongroundProgramBuilder::headaggr(Location const &loc, AggregateFunction fun, BoundVecUid bounds, HdAggrElemVecUid headaggrelemvec) {
@@ -313,7 +324,7 @@ void NongroundProgramBuilder::rule(Location const &loc, HdLitUid head) {
 }
 
 void NongroundProgramBuilder::rule(Location const &loc, HdLitUid head, BdLitVecUid body) {
-    prg_.add(make_locatable<Rule>(loc, heads_.erase(head), bodies_.erase(body), false));
+    prg_.add(make_locatable<Statement>(loc, heads_.erase(head), bodies_.erase(body), StatementType::RULE));
 }
 
 void NongroundProgramBuilder::define(Location const &loc, FWString name, TermUid value, bool defaultDef) {
@@ -321,15 +332,24 @@ void NongroundProgramBuilder::define(Location const &loc, FWString name, TermUid
 }
 
 void NongroundProgramBuilder::optimize(Location const &loc, TermUid weight, TermUid priority, TermVecUid cond, BdLitVecUid body) {
-    prg_.add(make_locatable<WeakConstraint>(loc, terms_.erase(weight), terms_.erase(priority), termvecs_.erase(cond), bodies_.erase(body)));
+    if (rewriteMinimize_) {
+        auto argsUid = termvec(termvec(termvec(), priority), weight);
+        termvec(argsUid, term(loc, cond, true));
+        auto predUid = predlit(loc, NAF::POS, false, "_criteria", termvecvec(termvecvec(), argsUid));
+        rule(loc, headlit(predUid), body);
+        out.outPredsForce.emplace_back(loc, Signature("_criteria", 3), false);
+    }
+    else {
+        prg_.add(make_locatable<Statement>(loc, terms_.erase(weight), terms_.erase(priority), termvecs_.erase(cond), bodies_.erase(body)));
+    }
 }
 
-void NongroundProgramBuilder::showsig(Location const &loc, FWString name, unsigned arity, bool csp) {
-    out.outPreds.emplace_back(loc, FWSignature(name, arity), csp);
+void NongroundProgramBuilder::showsig(Location const &loc, FWSignature sig, bool csp) {
+    out.outPreds.emplace_back(loc, sig, csp);
 }
 
 void NongroundProgramBuilder::show(Location const &loc, TermUid t, BdLitVecUid body, bool csp) {
-    rule(loc, headlit(predlit(loc, NAF::POS, false, "#show", termvecvec(termvecvec(), termvec(termvec(termvec(), t), term(loc, Value((int)csp)))))), body);
+    rule(loc, headlit(predlit(loc, NAF::POS, false, "#show", termvecvec(termvecvec(), termvec(termvec(termvec(), t), term(loc, Value::createNum(csp)))))), body);
 }
 
 void NongroundProgramBuilder::lua(Location const &loc, FWString code) {
@@ -345,7 +365,7 @@ void NongroundProgramBuilder::block(Location const &loc, FWString name, IdVecUid
 }
 
 void NongroundProgramBuilder::external(Location const &loc, LitUid head, BdLitVecUid body) {
-    prg_.add(make_locatable<Rule>(loc, heads_.erase(headlit(head)), bodies_.erase(body), true));
+    prg_.add(make_locatable<Statement>(loc, heads_.erase(headlit(head)), bodies_.erase(body), StatementType::EXTERNAL));
 }
 
 // }}}

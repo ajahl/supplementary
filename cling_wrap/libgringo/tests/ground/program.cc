@@ -25,6 +25,7 @@
 #include "gringo/scripts.hh"
 
 #include "tests/tests.hh"
+#include "tests/gringo_module.hh"
 
 namespace Gringo { namespace Ground { namespace Test {
 
@@ -61,10 +62,10 @@ Program parse(std::string const &str) {
     Output::OutputBase out({}, oss);
     Input::Program prg;
     Defines defs;
-    Scripts scripts;
+    Scripts scripts(Gringo::Test::getTestModule());
     Input::NongroundProgramBuilder pb{ scripts, prg, out, defs };
     Input::NonGroundParser ngp{ pb };
-    ngp.pushStream("-", make_unique<std::stringstream>(str));
+    ngp.pushStream("-", gringo_make_unique<std::stringstream>(str));
     ngp.parse();
     prg.rewrite(defs);
     return prg.toGround(out.domains);
@@ -93,6 +94,10 @@ void TestProgram::tearDown() {
 void TestProgram::test_toGround() {
     Gringo::Test::Messages msg;
     CPPUNIT_ASSERT_EQUAL(S(
+        "% component\n"
+        "#external."),
+        toString(parse("p(1;2).")));
+    CPPUNIT_ASSERT_EQUAL(S(
         "% component\n#external.\n"
         "% positive component\n"
         "p(X):-q(X)."),
@@ -110,100 +115,151 @@ void TestProgram::test_toGround() {
     CPPUNIT_ASSERT_EQUAL(S(
         "% component\n#external.\n"
         "% component\n"
-        ":-0==0."),
+        "#false:-0=0."),
         toString(parse(":-.")));
     CPPUNIT_ASSERT_EQUAL(S(
         "% component\n#external.\n"
         "% component\n"
-        ":-not not p."),
+        "#false:-not not p."),
         toString(parse("not p.")));
     CPPUNIT_ASSERT_EQUAL(S(
         "% component\n#external.\n"
         "% positive component\n"
-        "p(X,Y):-X=Y,p(X),p(Y),Y=X."),
+        "p(X,Y):-p(Y),p(X),X=Y,Y=X."),
         toString(parse("p(X,Y):-X=Y,p(X),p(Y).")));
     CPPUNIT_ASSERT_EQUAL(S(
-        "% component\n#external.\n"
+        "% component\n"
+        "#external.\n"
         "% positive component\n"
-        "#accumulate(#d0(Z,X,Y),tuple(#special)):-:-p(X,Y,Z),0>Z.\n"
+        "#accu(#d0(Z,X,Y),tuple(#special)):-:-p(X,Y,Z),0>Z.\n"
         "% positive component\n"
-        "#accumulate(#d0(Z,X,Y),tuple(A)):-q(A),r(A,X):-p(X,Y,Z).\n"
+        "#accu(#d0(Z,X,Y),tuple(A)):-q(A),r(A,X):-p(X,Y,Z).\n"
         "% positive component\n"
-        "#accumulate(#d0(Z,X,Y),tuple(B,Y)):-a(B,Y):-p(X,Y,Z).\n"
+        "#accu(#d0(Z,X,Y),tuple(B,Y)):-a(B,Y):-p(X,Y,Z).\n"
         "% positive component\n"
-        "x:-p(X,Y,Z),#d0(Z,X,Y)."),
+        "#d0(Z,X,Y):-#accu(#d0(Z,X,Y),tuple(#special)),#accu(#d0(Z,X,Y),tuple(A)),#accu(#d0(Z,X,Y),tuple(B,Y)).\n"
+        "% positive component\n"
+        "x:-p(X,Y,Z),Z<#count{#d0(Z,X,Y)}."),
         toString(parse("x:-p(X,Y,Z),Z<#count{A:q(A),r(A,X);B,Y:a(B,Y)}.")));
     CPPUNIT_ASSERT_EQUAL(S(
-        "% component\n#external.\n"
+        "% component\n"
+        "#external.\n"
         "% positive component\n"
-        "#accumulate(#d0(Z,X,Y),tuple(#special)):-:-p(X,Y,Z),0==Z.\n"
+        "#accu(#d0(Z,X,Y),tuple(#special)):-:-p(X,Y,Z),0=Z.\n"
         "% positive component\n"
-        "#accumulate(#d0(Z,X,Y),tuple(A)):-q(A),r(A,X):-p(X,Y,Z).\n"
+        "#accu(#d0(Z,X,Y),tuple(A)):-q(A),r(A,X):-p(X,Y,Z).\n"
         "% positive component\n"
-        "#accumulate(#d0(Z,X,Y),tuple(B,Y)):-a(B,Y):-p(X,Y,Z).\n"
+        "#accu(#d0(Z,X,Y),tuple(B,Y)):-a(B,Y):-p(X,Y,Z).\n"
         "% positive component\n"
-        "x:-p(X,Y,Z),#d0(Z,X,Y)."),
+        "#d0(Z,X,Y):-#accu(#d0(Z,X,Y),tuple(#special)),#accu(#d0(Z,X,Y),tuple(A)),#accu(#d0(Z,X,Y),tuple(B,Y)).\n"
+        "% positive component\n"
+        "x:-p(X,Y,Z),Z=#count{#d0(Z,X,Y)}."),
         toString(parse("x:-p(X,Y,Z),Z=#count{A:q(A),r(A,X);B,Y:a(B,Y)}.")));
     CPPUNIT_ASSERT_EQUAL(S(
-        "% component\n#external.\n"
         "% component\n"
-        "Z<#count(#d1(Z,X,Y)):-p(X,Y,Z).\n"
+        "#external.\n"
+        "% positive component\n"
+        "#accu(#d0(X,Y,ZZ),tuple(#special)):-:-p(X,Y,Z).\n"
+        "% positive component\n"
+        "#accu(#d0(X,Y,ZZ),tuple(A)):-q(A),r(A,X):-p(X,Y,Z).\n"
+        "% positive component\n"
+        "#accu(#d0(X,Y,ZZ),tuple(B,Y)):-a(B,Y):-p(X,Y,Z).\n"
+        "% positive component\n"
+        "#d0(X,Y,ZZ):-#accu(#d0(X,Y,ZZ),tuple(#special));#accu(#d0(X,Y,ZZ),tuple(A));#accu(#d0(X,Y,ZZ),tuple(B,Y)).\n"
+        "% positive component\n"
+        "x:-p(X,Y,Z),ZZ=#count{#d0(X,Y,ZZ)}."),
+        toString(parse("x:-p(X,Y,Z),ZZ=#count{A:q(A),r(A,X);B,Y:a(B,Y)}.")));
+    CPPUNIT_ASSERT_EQUAL(S(
         "% component\n"
-        "#accumulate(#d1(Z,X,Y),tuple(B,Y),head(x)):-a(B,Y),#d1(Z,X,Y).\n"
-        "#accumulate(#d1(Z,X,Y),tuple(A),head(q(A))):-r(A,X),#d1(Z,X,Y)."),
+        "#external.\n"
+        "% component\n"
+        "Z<#count(#d0(Z,X,Y)):-p(X,Y,Z).\n"
+        "% component\n"
+        "#accu(#d0(Z,X,Y),q(A),tuple(A)):-r(A,X),#d0(Z,X,Y)!.\n"
+        "% component\n"
+        "#accu(#d0(Z,X,Y),x,tuple(B,Y)):-a(B,Y),#d0(Z,X,Y)!.\n"
+        "% component\n"
+        "Z<#count{A:q(A):#accu(#d0(Z,X,Y),q(A),tuple(A));B,Y:x:#accu(#d0(Z,X,Y),x,tuple(B,Y))}:-#d0(Z,X,Y)!."),
         toString(parse("Z<#count{A:q(A):r(A,X);B,Y:x:a(B,Y)}:-p(X,Y,Z).")));
     CPPUNIT_ASSERT_EQUAL(S(
-        "% component\n#external.\n"
+        "% component\n"
+        "#external.\n"
         "% positive component\n"
-        "#accumulate(#d0(Z,X,Y),tuple(#special)):-:-p(X,Y,Z),0>Z.\n"
+        "#accu(#d0(Z,X,Y),tuple(#special)):-:-p(X,Y,Z),0>Z.\n"
         "% positive component\n"
-        "#accumulate(#d0(Z,X,Y),tuple(1,1,q(A))):-r(A,X),not q(A):-p(X,Y,Z).\n"
+        "#accu(#d0(Z,X,Y),tuple(1,q(A))):-r(A,X),not q(A):-p(X,Y,Z).\n"
         "% positive component\n"
-        "#accumulate(#d0(Z,X,Y),tuple(1,0,a(B,Y))):-a(B,Y):-p(X,Y,Z).\n"
+        "#accu(#d0(Z,X,Y),tuple(0,a(B,Y))):-a(B,Y):-p(X,Y,Z).\n"
         "% positive component\n"
-        "#accumulate(#d0(Z,X,Y),tuple(1,3,X,1)):-q(X),X>1:-p(X,Y,Z).\n"
+        "#accu(#d0(Z,X,Y),tuple(3,X,1)):-q(X),X>1:-p(X,Y,Z).\n"
         "% positive component\n"
-        "x:-p(X,Y,Z),#d0(Z,X,Y)."),
+        "#d0(Z,X,Y):-#accu(#d0(Z,X,Y),tuple(#special)),#accu(#d0(Z,X,Y),tuple(1,q(A))),#accu(#d0(Z,X,Y),tuple(0,a(B,Y))),#accu(#d0(Z,X,Y),tuple(3,X,1)).\n"
+        "% positive component\n"
+        "x:-p(X,Y,Z),Z<#count{#d0(Z,X,Y)}."),
         toString(parse("x:-p(X,Y,Z),Z<{not q(A):r(A,X);a(B,Y);X>1:q(X)}.")));
     CPPUNIT_ASSERT_EQUAL(S(
-        "% component\n#external.\n"
         "% component\n"
-        "Z<#count(#d1(Z,X,Y)):-p(X,Y,Z).\n"
+        "#external.\n"
         "% component\n"
-        "#accumulate(#d1(Z,X,Y),tuple(1,3,X,1),head(#true)):-q(X),X>1,#d1(Z,X,Y).\n"
-        "#accumulate(#d1(Z,X,Y),tuple(1,0,a(B,Y)),head(a(B,Y))):-#d1(Z,X,Y).\n"
-        "#accumulate(#d1(Z,X,Y),tuple(1,1,q(A)),head(#true)):-r(A,X),not q(A),#d1(Z,X,Y)."),
+        "Z<#count(#d0(Z,X,Y)):-p(X,Y,Z).\n"
+        "% component\n"
+        "#accu(#d0(Z,X,Y),#true):-r(A,X),not q(A),#d0(Z,X,Y)!.\n"
+        "% component\n"
+        "#accu(#d0(Z,X,Y),a(B,Y),tuple(0,a(B,Y))):-#d0(Z,X,Y)!.\n"
+        "% component\n"
+        "#accu(#d0(Z,X,Y),#true):-q(X),X>1,#d0(Z,X,Y)!.\n"
+        "% component\n"
+        "Z<#count{1,q(A):#true:#accu(#d0(Z,X,Y),#true);0,a(B,Y):a(B,Y):#accu(#d0(Z,X,Y),a(B,Y),tuple(0,a(B,Y)));3,X,1:#true:#accu(#d0(Z,X,Y),#true)}:-#d0(Z,X,Y)!."),
         toString(parse("Z<{not q(A):r(A,X);a(B,Y);X>1:q(X)}:-p(X,Y,Z).")));
     CPPUNIT_ASSERT_EQUAL(S(
-        "% component\n#external.\n"
         "% component\n"
-        "#d0(Y,X):-p(X,Y,Z).\n"
+        "#external.\n"
         "% component\n"
-        "a(B,Y):-#d0(Y,X).\n"
+        "#accu(empty,#d0(Y,X),()):-p(X,Y,Z).\n"
         "% component\n"
-        "q(A):-r(A,X),#d0(Y,X)."),
+        "#accu(cond,#d0(Y,X),(0,)):-:-#accu(empty,#d0(Y,X),())!.\n"
+        "% component\n"
+        "#accu(head(a(B,Y)),#d0(Y,X),(0,)):-:-#accu(cond,#d0(Y,X),(0,))!.\n"
+        "% component\n"
+        "#accu(cond,#d0(Y,X),(A,1)):-r(A,X):-#accu(empty,#d0(Y,X),())!.\n"
+        "% component\n"
+        "#accu(head(q(A)),#d0(Y,X),(A,1)):-:-#accu(cond,#d0(Y,X),(A,1))!.\n"
+        "% component\n"
+        "a(B,Y)|q(A):-#accu(#Any1,#d0(Y,X),#Any2)!"),
         toString(parse("q(A):r(A,X);a(B,Y):-p(X,Y,Z).")));
     CPPUNIT_ASSERT_EQUAL(S(
-        "% component\n#external.\n"
         "% component\n"
-        "#d0(Y,X):-p(X,Y,Z).\n"
+        "#external.\n"
         "% component\n"
-        "a(B,Y):-#d0(Y,X).\n"
+        "#accu(empty,#d0(Y,X),()):-p(X,Y,Z).\n"
         "% component\n"
-        "#true:-q(X),X>1,#d0(Y,X).\n"
+        "#accu(cond,#d0(Y,X),(0,)):-:-#accu(empty,#d0(Y,X),())!.\n"
         "% component\n"
-        "#true:-r(A,X),not q(A),#d0(Y,X)."),
+        "#accu(head(a(B,Y)),#d0(Y,X),(0,)):-:-#accu(cond,#d0(Y,X),(0,))!.\n"
+        "% component\n"
+        "#accu(cond,#d0(Y,X),(1,)):-q(X):-#accu(empty,#d0(Y,X),())!.\n"
+        "% component\n"
+        "#accu(head,#d0(Y,X),(1,)):-X<=1:-#accu(cond,#d0(Y,X),(1,))!.\n"
+        "% component\n"
+        "#accu(cond,#d0(Y,X),(A,2)):-r(A,X):-#accu(empty,#d0(Y,X),())!.\n"
+        "% component\n"
+        "#accu(head,#d0(Y,X),(A,2)):-not not q(A):-#accu(cond,#d0(Y,X),(A,2))!.\n"
+        "% component\n"
+        "a(B,Y):-#accu(#Any1,#d0(Y,X),#Any2)!"),
         toString(parse("not q(A):r(A,X);a(B,Y);X>1:q(X):-p(X,Y,Z).")));
     CPPUNIT_ASSERT_EQUAL(S(
-        "% component\n#external.\n"
+        "% component\n"
+        "#external.\n"
         "% positive component\n"
-        "#accumulate(#d0(Z,X,Y),tuple(#special)):-:-p(X,Y,Z),0>Z.\n"
+        "#accu(#d0(Z,X,Y),tuple(#special)):-:-p(X,Y,Z),0>Z.\n"
         "% positive component\n"
-        "#accumulate(#d0(Z,X,Y),tuple(A)):-q(A),r(A,X):-p(X,Y,Z).\n"
+        "#accu(#d0(Z,X,Y),tuple(A)):-q(A),r(A,X):-p(X,Y,Z).\n"
         "% positive component\n"
-        "#accumulate(#d0(Z,X,Y),tuple(B,Y)):-a(B,Y):-p(X,Y,Z).\n"
+        "#accu(#d0(Z,X,Y),tuple(B,Y)):-a(B,Y):-p(X,Y,Z).\n"
         "% positive component\n"
-        "x:-p(X,Y,Z),#d0(Z,X,Y)."),
+        "#d0(Z,X,Y):-#accu(#d0(Z,X,Y),tuple(#special)),#accu(#d0(Z,X,Y),tuple(A)),#accu(#d0(Z,X,Y),tuple(B,Y)).\n"
+        "% positive component\n"
+        "x:-p(X,Y,Z),Z<#count{#d0(Z,X,Y)}."),
         toString(parse("x:-p(X,Y,Z),Z<#count{A:q(A),r(A,X);B,Y:a(B,Y)}.")));
 }
 
@@ -215,9 +271,9 @@ void TestProgram::test_analyze() {
         "x:-x?.\n"
         "% positive component\n"
         "b:-a?.\n"
-        "a:-b?,x,not y.\n"
+        "a:-not y,x,b?.\n"
         "% positive component\n"
-        "c:-a,b."),
+        "c:-b,a."),
         toString(parse("x:-x.a:-b,x,not y.b:-a.c:-a,b.")));
     CPPUNIT_ASSERT_EQUAL(S(
         "% component\n#external.\n"
@@ -226,7 +282,7 @@ void TestProgram::test_analyze() {
         "% component\n"
         "a:-not b?.\n"
         "% component\n"
-        "b:-not a!,a!,x."),
+        "b:-x,a!,not a!."),
         toString(parse("x:-x.a:-not b.b:-not a,a,x.")));
     // TODO: all the other statements are missing
 }

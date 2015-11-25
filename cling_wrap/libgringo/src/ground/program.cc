@@ -21,6 +21,8 @@
 #include "gringo/ground/program.hh"
 #include "gringo/output/output.hh"
 
+#define DEBUG_INSTANTIATION 0
+
 namespace Gringo { namespace Ground {
 
 // {{{ definition of Parameters
@@ -74,15 +76,30 @@ void Program::ground(Scripts &scripts, Output::OutputBase &out) {
 }
 
 void Program::ground(Parameters const &params, Scripts &scripts, Output::OutputBase &out, bool finalize) {
-    for (auto &x : out.domains) {
-        std::string const &name = *(*x.first).name();
-        if (name.compare(0, 6, "#split") == 0 || name.compare(0, 5, "#inc_") == 0) {
-            // clear projection, split, and incremental domains
-            x.second.clear();
+    for (auto &dom : out.domains) {
+        std::string const &name = *(*dom.first).name();
+        if (name.compare(0, 3, "#p_") == 0) {
+            // prevent redefinition of projection predicates
+            Output::RuleRef ref;
+            Output::PredicateLiteral p;
+            ref.body.emplace_back(p);
+            for (PredicateDomain::element_type &atom : dom.second.exports) {
+                if (!atom.second.isFalse() && atom.second.defined() && !atom.second.fact(false)) {
+                    PredicateDomain::element_type old(atom);
+                    atom.second = AtomState(false, old.second.generation());
+                    p.repr      = &old;
+                    ref.head    = &atom;
+                    out.output(ref);
+                }
+            }
+        }
+        else if (name.compare(0, 5, "#inc_") == 0) {
+            // clear incremental domains
+            dom.second.clear();
         }
         else {
             // mark the incremental step in all other domains
-            x.second.exports.incNext();
+            dom.second.exports.incNext();
         }
     }
     out.checkOutPreds();
@@ -95,16 +112,12 @@ void Program::ground(Parameters const &params, Scripts &scripts, Output::OutputB
         auto base = out.domains.find(p.first);
         if (base != out.domains.end()) {
             for (auto &args : p.second) { 
-                if (args.size() == 0) { base->second.insert(Value((*p.first).name()), true); }
-                else { base->second.insert(Value((*p.first).name(), args), true); }
+                if (args.size() == 0) { base->second.insert(Value::createId((*p.first).name()), true); }
+                else { base->second.insert(Value::createFun((*p.first).name(), args), true); }
             }
         }
     }
-    for (auto &x : out.domains) { 
-        x.second.mark(); 
-        x.second.unmark();
-        x.second.expire();
-    }
+    for (auto &x : out.domains) { x.second.nextGeneration(); }
     Queue q;
     for (auto &x : stms) {
         if (!linearized) {
@@ -112,9 +125,13 @@ void Program::ground(Parameters const &params, Scripts &scripts, Output::OutputB
             for (auto &y : x.first) { y->linearize(scripts, x.second); }
             for (auto &y : x.first) { y->startLinearize(false); }
         }
-        // std::cerr << "============= component ===========" << std::endl;
+#if DEBUG_INSTANTIATION > 0
+        std::cerr << "============= component ===========" << std::endl;
+#endif
         for (auto &y : x.first) { 
-            // std::cerr << "  enqueue: " << *y << std::endl;
+#if DEBUG_INSTANTIATION > 0
+            std::cerr << "  enqueue: " << *y << std::endl;
+#endif
             y->enqueue(q);
         }
         q.process(out);
@@ -123,9 +140,7 @@ void Program::ground(Parameters const &params, Scripts &scripts, Output::OutputB
     for (auto &x : negate) {
         for (auto it(std::get<1>(x).exports.begin() + std::get<1>(x).exports.incOffset), ie(std::get<1>(x).exports.end()); it != ie; ++it) {
             PredicateDomain::element_type &neg(*it);
-            Value v = neg.first.type() == Value::ID
-                ? Value((*neg.first.string()).substr(1))
-                : Value((*neg.first.name()).substr(1), neg.first.args());
+            Value v = neg.first.flipSign();
             auto pos(std::get<0>(x).domain.find(v));
             if (pos != std::get<0>(x).domain.end() && pos->second.defined()) {
                 pPos.repr = &*pos;

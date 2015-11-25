@@ -61,17 +61,19 @@ public:
 
 using LocSet = std::set<Location>;
 using SigSet = unique_list<FWSignature>;
+using UndefVec = std::vector<std::pair<Location, Printable const *>>;
+
 enum class OccurrenceType { POSITIVELY_STRATIFIED, STRATIFIED, UNSTRATIFIED };
 template <class HeadOcc>
 struct BodyOccurrence {
-    typedef std::vector<std::reference_wrapper<HeadOcc>> DefinedBy;
+    using DefinedBy = std::vector<std::reference_wrapper<HeadOcc>>;
     virtual UGTerm getRepr() const = 0;
     virtual bool isPositive() const = 0;
     virtual bool isNegative() const = 0;
     virtual void setType(OccurrenceType x) = 0;
     virtual OccurrenceType getType() const = 0;
     virtual DefinedBy &definedBy() = 0;
-    virtual void checkDefined(LocSet &done, SigSet const &edb) const = 0;
+    virtual void checkDefined(LocSet &done, SigSet const &edb, UndefVec &undef) const = 0;
     virtual ~BodyOccurrence() { }
 };
 

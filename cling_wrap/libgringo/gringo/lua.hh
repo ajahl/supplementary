@@ -23,17 +23,21 @@
 
 #include <ostream>
 #include <gringo/locatable.hh>
+#include <gringo/control.hh>
+
+struct lua_State;
 
 namespace Gringo {
 
 struct Control;
 struct LuaImpl;
 struct Lua {
-    Lua();
+    Lua(GringoModule &module);
     bool exec(Location const &loc, FWString name);
-    ValVec call(Location const &loc, FWString name, ValVec const &args);
-    bool callable(FWString name);
+    ValVec call(Any const &context, Location const &loc, FWString name, ValVec const &args);
+    bool callable(Any const &context, FWString name);
     void main(Control &ctl);
+    static void initlib(lua_State *L, GringoModule &module);
     ~Lua();
 
     std::unique_ptr<LuaImpl> impl;

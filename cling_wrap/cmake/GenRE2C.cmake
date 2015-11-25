@@ -1,9 +1,9 @@
-if(EXISTS ${WORKING_DIRECTORY}/${FileToCheck})
-  message(STATUS "${FileToCheck} exists. So do not generate it.")
+if(EXISTS ${WORKING_DIRECTORY}/${OUTPUT})
+  message(STATUS "${OUTPUT} exists. So do not generate it.")
 else()
-  message(STATUS "${FileToCheck} doesn't exist.")
-  set(re2cInput ${WORKING_DIRECTORY}/libgringo/src/input/nongroundlexer.xh)
-  set(re2cOutput ${WORKING_DIRECTORY}/libgringo/src/input/nongroundlexer.hh)
+  message(STATUS "${OUTPUT} doesn't exist.")
+  set(re2cInput ${WORKING_DIRECTORY}/${INPUT})
+  set(re2cOutput ${WORKING_DIRECTORY}/${OUTPUT})
   execute_process(
     COMMAND re2c -o ${re2cOutput} ${re2cInput}
   )

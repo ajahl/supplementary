@@ -226,8 +226,7 @@ std::string LexerState<T>::string(int start, int end) {
 
 template <class T>
 void LexerState<T>::step(char s) {
-    for (char *c = state().start_; c != state().cursor_; c++)
-    {
+    for (char *c = state().start_; c != state().cursor_; c++) {
         if (*c == s) { step(); }
     }
 }

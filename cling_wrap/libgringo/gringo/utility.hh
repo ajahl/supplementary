@@ -33,10 +33,10 @@
 
 namespace Gringo {
  
-// {{{ declaration of make_unique<T, Args>
+// {{{ declaration of gringo_make_unique<T, Args>
 
 template<typename T, typename ...Args>
-std::unique_ptr<T> make_unique(Args&& ...args);
+std::unique_ptr<T> gringo_make_unique(Args&& ...args);
 
 // }}}
 // {{{ declaration of helpers to perform comparisons
@@ -176,10 +176,10 @@ void cross_product(std::vector<std::vector<T>> &vec);
 
 // }}}
 
-// {{{ definition of make_unique
+// {{{ definition of gringo_make_unique
 
 template<typename T, typename ...Args>
-std::unique_ptr<T> make_unique(Args&& ...args) {
+std::unique_ptr<T> gringo_make_unique(Args&& ...args) {
     return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
 }
 
@@ -209,7 +209,7 @@ bool value_equal_to<std::reference_wrapper<T>>::operator()(std::reference_wrappe
 
 template <class T, class U>
 bool value_equal_to<std::pair<T, U>>::operator()(std::pair<T, U> const &a, std::pair<T, U> const &b) const {
-    return is_value_equal_to(a.first, b.first) && is_value_equal_to(a.first, b.first);
+    return is_value_equal_to(a.first, b.first) && is_value_equal_to(a.second, b.second);
 }
 
 namespace detail {

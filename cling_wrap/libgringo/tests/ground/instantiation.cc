@@ -25,6 +25,7 @@
 #include "gringo/scripts.hh"
 
 #include "tests/tests.hh"
+#include "tests/gringo_module.hh"
 
 namespace Gringo { namespace Ground { namespace Test {
 
@@ -33,6 +34,7 @@ namespace Gringo { namespace Ground { namespace Test {
 class TestInstantiation : public CppUnit::TestFixture {
     CPPUNIT_TEST_SUITE(TestInstantiation);
         CPPUNIT_TEST(test_instantiate);
+        CPPUNIT_TEST(test_instantiateRec);
         CPPUNIT_TEST(test_bodyaggregate);
         CPPUNIT_TEST(test_bodyaggregate2);
         CPPUNIT_TEST(test_gbie);
@@ -50,6 +52,7 @@ class TestInstantiation : public CppUnit::TestFixture {
         CPPUNIT_TEST(test_rec_conj);
         CPPUNIT_TEST(test_meta);
         CPPUNIT_TEST(test_head);
+        CPPUNIT_TEST(test_head2);
         CPPUNIT_TEST(test_disjunction);
         CPPUNIT_TEST(test_strategicA);
         CPPUNIT_TEST(test_strategicB);
@@ -71,6 +74,7 @@ public:
     std::string ground(std::string const &str, std::initializer_list<std::string> filter = {""});
 
     void test_instantiate();
+    void test_instantiateRec();
     void test_bodyaggregate();
     void test_bodyaggregate2();
     void test_gbie();
@@ -88,6 +92,7 @@ public:
     void test_rec_conj();
     void test_meta();
     void test_head();
+    void test_head2();
     void test_disjunction();
     void test_strategicA();
     void test_strategicB();
@@ -115,10 +120,10 @@ std::string TestInstantiation::ground(std::string const &str, std::initializer_l
     Output::OutputBase out({}, ss);
     Input::Program prg;
     Defines defs;
-    Scripts scripts;
+    Scripts scripts(Gringo::Test::getTestModule());
     Input::NongroundProgramBuilder pb{ scripts, prg, out, defs };
     Input::NonGroundParser ngp{ pb };
-    ngp.pushStream("-", make_unique<std::stringstream>(str));
+    ngp.pushStream("-", gringo_make_unique<std::stringstream>(str));
     ngp.parse();
     prg.rewrite(defs);
 //    std::cerr << prg << std::endl;
@@ -141,6 +146,44 @@ std::string TestInstantiation::ground(std::string const &str, std::initializer_l
     std::sort(res.begin(), res.end());
     for (auto &x : res) { oss << x << "\n"; }
     return oss.str();
+}
+
+void TestInstantiation::test_instantiateRec() {
+    CPPUNIT_ASSERT_EQUAL(
+        std::string(
+            "a(0).\n"
+            "a(1).\n"
+            "a(2).\n"
+            "a(3).\n"
+            "a(4).\n"
+            "b(0).\n"
+            "b(1).\n"
+            "b(2).\n"
+            "b(3).\n"
+            "b(4).\n"
+            "c(0).\n"
+            "c(1).\n"
+            "c(2).\n"
+            "c(3).\n"
+            "c(4).\n"
+            "d(0).\n"
+            "d(1).\n"
+            "d(2).\n"
+            "d(3).\n"
+            "d(4).\n"
+            "p(0).\n"
+            "p(1).\n"
+            "p(2).\n"
+            "p(3).\n"
+            "p(4).\n"
+            "p(5).\n"),
+        ground(
+            "p(0).\n"
+            "a(X) :- p(X), X < 5.\n"
+            "b(X) :- a(X).\n"
+            "c(X) :- b(X), a(X).\n"
+            "d(X) :- c(X), b(X), a(X).\n"
+            "p(X+1) :- a(X), b(X), c(X), d(X).\n"));
 }
 
 void TestInstantiation::test_instantiate() {
@@ -171,7 +214,6 @@ void TestInstantiation::test_instantiate() {
     CPPUNIT_ASSERT_EQUAL(
         std::string(
             "x.\n"
-            "x:-not v.\n"
             "y.\n"
             "z.\n"),
         ground(
@@ -202,7 +244,7 @@ void TestInstantiation::test_instantiate() {
             "p(g(X)):-p(f(X)),not p(f(3)).\n"));
     CPPUNIT_ASSERT_EQUAL(
         std::string(
-            "0<=#count{1,0,a:a}<=0.\n"
+            "0<=#count{0,a:a}<=0.\n"
             "a.\n"),
         ground(
             "a.\n"
@@ -231,10 +273,10 @@ void TestInstantiation::test_bodyaggregate2() {
     CPPUNIT_ASSERT_EQUAL(
         std::string(
             "company(c1).\n" "company(c2).\n" "company(c3).\n" "company(c4).\n"
-            "controls(c1,c2):-51<=#sum{60}.\n"
-            "controls(c1,c3):-51<=#sum{20;35:controls(c1,c2)}.\n"
+            "controls(c1,c2):-51<=#sum{60:}.\n"
+            "controls(c1,c3):-51<=#sum{20:;35:controls(c1,c2)}.\n"
             "controls(c1,c4):-51<=#sum{51:controls(c1,c3)}.\n"
-            "controls(c3,c4):-51<=#sum{51}.\n"
+            "controls(c3,c4):-51<=#sum{51:}.\n"
             "owns(c1,c2,60).\n" "owns(c1,c3,20).\n" "owns(c2,c3,35).\n" "owns(c3,c4,51).\n"),
         ground(
             "controls(X,Y) :- 51 #sum { S: owns(X,Y,S); S: owns(Z,Y,S), controls(X,Z), X != Y }, company(X), company(Y), X != Y."
@@ -286,7 +328,7 @@ void TestInstantiation::test_min_fail() {
             "fmin(13) :- not not    3 #min {2:p(1); 1:r(1); 1,c:c} 3.\n"
             "fmin(14) :- not          #min {2:p(1); 3:b;    1:c} 1.\n"
             ));
-    CPPUNIT_ASSERT_EQUAL(S("[-:27:42-43: warning: atom is undefined:\n  b\n]"), IO::to_string(msg));
+    CPPUNIT_ASSERT_EQUAL(S("[-:27:42-43: info: atom does not occur in any rule head:\n  b\n]"), IO::to_string(msg));
 }
 
 void TestInstantiation::test_min_true() {
@@ -332,7 +374,7 @@ void TestInstantiation::test_min_true() {
             "tmin(22) :- not     3 #min {2:p(1); 1:r(1); 1,c:c} 3.\n"
             "tmin(23) :-           #min {2:p(1); 3:b;    1:c} 1.\n"
             "tmin(24) :- not not   #min {2:p(1); 3:b;    1:c} 1.\n"));
-    CPPUNIT_ASSERT_EQUAL(S("[-:27:39-40: warning: atom is undefined:\n  b\n,-:26:39-40: warning: atom is undefined:\n  b\n]"), IO::to_string(msg));
+    CPPUNIT_ASSERT_EQUAL(S("[-:26:39-40: info: atom does not occur in any rule head:\n  b\n,-:27:39-40: info: atom does not occur in any rule head:\n  b\n]"), IO::to_string(msg));
 }
 
 void TestInstantiation::test_min_open() {
@@ -586,7 +628,7 @@ void TestInstantiation::test_rec_count2() {
     Gringo::Test::Messages msg;
     CPPUNIT_ASSERT_EQUAL(
         std::string(
-            "a:-1!=#count{1,0,a:a}.\n"),
+            "a:-1!=#count{0,a:a}.\n"),
         ground(
             "a:-{a}!=1.\n"));
 }
@@ -684,7 +726,7 @@ void TestInstantiation::test_rec_conj() {
             "%  o    - observation vertex\n"
             "%\n"
             "% (i)---i---o\n"
-            "input(V) :- input(U); edge(U,V); input(W) : edge(U,W), V != W; not observed(U;V).\n"));
+            "input(V) :- input(U); edge(U,V); input(W) : edge(U,W), V != W; not observed(U), not observed(V).\n"));
 }
 
 void TestInstantiation::test_conj() {
@@ -712,13 +754,13 @@ void TestInstantiation::test_conj() {
             "p(2):-not not p(2).\n"
             "p(3):-not not p(3).\n"
             "p(4):-not not p(4).\n"
-            "s(1,2):-p(1);p(2).\n"
-            "s(1,3):-p(1);#false:p(2);p(3).\n"
-            "s(1,4):-p(1);#false:p(2);#false:p(3);p(4).\n"
-            "s(2,3):-p(2);p(3).\n"
-            "s(2,4):-p(2);#false:p(3);p(4).\n"
-            "s(3,4):-p(3);p(4).\n"),
-        ground(
+            "s(1,2):-p(2),p(1).\n"
+            "s(1,3):-p(3),p(1),#false:p(2).\n"
+            "s(1,4):-p(4),p(1),#false:p(2)|p(3).\n"
+            "s(2,3):-p(3),p(2).\n"
+            "s(2,4):-p(4),p(2),#false:p(3).\n"
+            "s(3,4):-p(4),p(3).\n"
+        ), ground(
             "p(X) :- not not p(X), X=1..4.\n"
             "s(X,Z) :- p(X), #false : p(Y), X < Y, Y < Z; p(Z), X < Z.\n"));
     CPPUNIT_ASSERT_EQUAL(
@@ -727,15 +769,16 @@ void TestInstantiation::test_conj() {
             "p(2):-not not p(2).\n"
             "p(3):-not not p(3).\n"
             "p(4):-not not p(4).\n"
-            "s(1,2):-p(1);p(2).\n"
-            "s(1,3):-p(1);#false:p(2),not not p(2);p(3).\n"
-            "s(1,4):-p(1);#false:p(2),not not p(2);#false:p(3),not not p(3);p(4).\n"
-            "s(2,3):-p(2);p(3).\n"
-            "s(2,4):-p(2);#false:p(3),not not p(3);p(4).\n"
-            "s(3,4):-p(3);p(4).\n"),
-        ground(
+            "s(1,2):-p(2),p(1).\n"
+            "s(1,3):-p(3),p(1),not p(2):p(2).\n"
+            "s(1,4):-p(4),p(1),not p(2):p(2);not p(3):p(3).\n"
+            "s(2,3):-p(3),p(2).\n"
+            "s(2,4):-p(4),p(2),not p(3):p(3).\n"
+            "s(3,4):-p(4),p(3).\n"
+        ), ground(
             "p(X) :- not not p(X), X=1..4.\n"
-            "s(X,Z) :- p(X), not p(Y) : p(Y), X < Y, Y < Z; p(Z), X < Z.\n"));
+            "s(X,Z) :- p(X), not p(Y) : p(Y), X < Y, Y < Z; p(Z), X < Z.\n"
+        ));
 }
 
 void TestInstantiation::test_meta() {
@@ -746,10 +789,10 @@ void TestInstantiation::test_meta() {
             "hold(atom(r)):-hold(conjunction(2)).\n"
             "hold(atom(s)):-hold(conjunction(1)).\n"
             "hold(atom(t)):-hold(conjunction(0)).\n"
-            "hold(conjunction(0)):-hold(sum(1,0,2));#true.\n"
-            "hold(conjunction(1)):-#false:not not hold(atom(q));#false:not not hold(atom(r)).\n"
-            "hold(conjunction(2)):-hold(sum(1,1,2));#true.\n"
-            "hold(conjunction(3)):-hold(atom(q));hold(atom(r));#true.\n"
+            "hold(conjunction(0)):-hold(sum(1,0,2)).\n"
+            "hold(conjunction(1)):-not hold(atom(q)),not hold(atom(r)).\n"
+            "hold(conjunction(2)):-hold(sum(1,1,2)).\n"
+            "hold(conjunction(3)):-hold(atom(r)),hold(atom(q)).\n"
             "hold(sum(1,0,2)):-1<=#sum{1,2:not hold(atom(t));1,1:hold(atom(s));1,0:hold(atom(r))}<=2.\n"
             "hold(sum(1,1,2)):-1<=#sum{1,0:hold(atom(p));1,1:hold(atom(t))}<=2.\n"),
         ground(
@@ -806,7 +849,7 @@ void TestInstantiation::test_meta() {
 void TestInstantiation::test_head() {
     CPPUNIT_ASSERT_EQUAL(
         std::string(
-            "2<=#count{r,3:#true:not r(3);r,3:r(3);r,4:#true:not r(4);r,4:r(4);r,5:#true:not r(5);r,5:r(5);q,1:q(1);q,2:q(2);q,3:q(3)}<=4.\n"
+            "2<=#count{q,1:q(1);q,2:q(2);q,3:q(3);r,3:r(3);r,3:#true:not r(3);r,4:r(4);r,4:#true:not r(4);r,5:r(5);r,5:#true:not r(5)}<=4.\n"
             "out(q(1)):-q(1).\n" "out(q(2)):-q(2).\n" "out(q(3)):-q(3).\n" 
             "out(r(3)):-r(3).\n" "out(r(4)):-r(4).\n" "out(r(5)):-r(5).\n"
             "p(1).\n" "p(2).\n" "p(3).\n" "p(4).\n" "p(5).\n"),
@@ -817,13 +860,98 @@ void TestInstantiation::test_head() {
             "out(r(X)):-r(X).\n"));
 }
 
+void TestInstantiation::test_head2() {
+    CPPUNIT_ASSERT_EQUAL(
+        std::string(
+            "#count{0,d:d;0,e:e}.\n"
+            "a.\n"
+            "b.\n"
+            "c.\n"
+            "f:-d,e.\n"
+        ), ground(
+            "a.\n"
+            "b.\n"
+            "c.\n"
+            "{d:a;e:b}:-c.\n"
+            "f:-e,d.\n"
+        ));
+    CPPUNIT_ASSERT_EQUAL(
+        std::string(
+            "1>=#count{0,r(a):r(a)}:-r(d).\n"
+            "1>=#count{0,r(b):r(b);0,r(c):r(c)}.\n"
+            "1>=#count{0,r(b):r(b)}:-r(e).\n"
+            "1>=#count{0,r(d):r(d);0,r(e):r(e)}:-r(c).\n"
+            "1>=#count{0,r(e):r(e)}:-r(b).\n"
+            "p(a,b).\n"
+            "p(a,c).\n"
+            "p(b,e).\n"
+            "p(c,d).\n"
+            "p(c,e).\n"
+            "p(d,a).\n"
+            "p(e,b).\n"
+            "r(a).\n"
+        ), ground(
+            "p(a,b).\n"
+            "p(a,c).\n"
+            "p(c,d).\n"
+            "p(c,e).\n"
+            "p(d,a).\n"
+            "p(b,e).\n"
+            "p(e,b).\n"
+            "\n"
+            "r(a).\n"
+            "{ r(Y) : p(X,Y) } 1 :- r(X).\n"
+        ));
+    CPPUNIT_ASSERT_EQUAL(
+        std::string(
+            "a.\n"
+            "b.\n"
+            "c.\n"
+            "e;d.\n"
+            "f:-d,e.\n"
+        ), ground(
+            "a.\n"
+            "b.\n"
+            "c.\n"
+            "d:a | e:b :- c.\n"
+            "f :- e;d.\n"
+        ));
+    CPPUNIT_ASSERT_EQUAL(
+        std::string(
+            "p(a,b).\n"
+            "p(a,c).\n"
+            "p(b,e).\n"
+            "p(c,d).\n"
+            "p(c,e).\n"
+            "p(d,a).\n"
+            "p(e,b).\n"
+            "r(a).\n"
+            "r(a):-r(d).\n"
+            "r(b):-r(e).\n"
+            "r(b);r(c).\n"
+            "r(d);r(e):-r(c).\n"
+            "r(e):-r(b).\n"
+        ), ground(
+            "p(a,b).\n"
+            "p(a,c).\n"
+            "p(c,d).\n"
+            "p(c,e).\n"
+            "p(d,a).\n"
+            "p(b,e).\n"
+            "p(e,b).\n"
+            "\n"
+            "r(a).\n"
+            "r(Y) : p(X,Y) :- r(X).\n"
+        ));
+}
+
 void TestInstantiation::test_disjunction() {
     CPPUNIT_ASSERT_EQUAL(
         std::string(
             "out(q(1)):-q(1).\n" "out(q(2)):-q(2).\n" "out(q(3)):-q(3).\n"
             "out(r(3)):-r(3).\n" "out(r(4)):-r(4).\n" "out(r(5)):-r(5).\n"
             "p(1).\n" "p(2).\n" "p(3).\n" "p(4).\n" "p(5).\n"
-            "r(3);r(4);r(5);#true:not r(3);#true:not r(4);#true:not r(5);q(1);q(2);q(3).\n"),
+            "r(3);r(4);r(5);not r(3);not r(4);not r(5);q(1);q(2);q(3).\n"),
         ground(
             "p(1..5).\n"
             "q(X) : p(X), X <= 3; r(X) : p(X), X >= 3; not r(X) : p(X), X >= 3.\n"
@@ -915,32 +1043,32 @@ std::string TestInstantiation::strategicB1() const {
 void TestInstantiation::test_strategicA() {
     CPPUNIT_ASSERT_EQUAL(
         std::string(
-            "strategic(1):-strategic(5);strategic(2);strategic(2).\n"
-            "strategic(1):-strategic(5);strategic(3);strategic(3).\n"
+            "strategic(1):-strategic(2),strategic(2),strategic(5).\n"
+            "strategic(1):-strategic(3),strategic(3),strategic(5).\n"
             "strategic(1);strategic(1).\n"
             "strategic(1);strategic(5).\n"
-            "strategic(2):-strategic(6);strategic(3);strategic(1).\n"
-            "strategic(2):-strategic(6);strategic(3);strategic(5).\n"
+            "strategic(2):-strategic(1),strategic(3),strategic(6).\n"
+            "strategic(2):-strategic(5),strategic(3),strategic(6).\n"
             "strategic(2);strategic(4).\n"
             "strategic(2);strategic(4).\n"
             "strategic(2);strategic(5).\n"
             "strategic(2);strategic(6).\n"
-            "strategic(3):-strategic(4);strategic(1);strategic(5).\n"
-            "strategic(3):-strategic(4);strategic(1);strategic(6).\n"
+            "strategic(3):-strategic(5),strategic(1),strategic(4).\n"
+            "strategic(3):-strategic(6),strategic(1),strategic(4).\n"
             "strategic(3);strategic(4).\n"
             "strategic(3);strategic(4).\n"
-            "strategic(4):-strategic(2);strategic(5);strategic(5).\n"
-            "strategic(4):-strategic(2);strategic(6);strategic(6).\n"
+            "strategic(4):-strategic(5),strategic(5),strategic(2).\n"
+            "strategic(4):-strategic(6),strategic(6),strategic(2).\n"
             "strategic(4);strategic(2).\n"
             "strategic(4);strategic(4).\n"
             "strategic(4);strategic(4).\n"
             "strategic(4);strategic(6).\n"
-            "strategic(5):-strategic(1);strategic(1);strategic(1).\n"
+            "strategic(5):-strategic(1),strategic(1),strategic(1).\n"
             "strategic(5);strategic(2).\n"
             "strategic(5);strategic(2).\n"
             "strategic(5);strategic(5).\n"
             "strategic(5);strategic(5).\n"
-            "strategic(6):-strategic(4);strategic(4);strategic(4).\n"
+            "strategic(6):-strategic(4),strategic(4),strategic(4).\n"
             "strategic(6);strategic(1).\n"
             "strategic(6);strategic(1).\n"
             "strategic(6);strategic(2).\n"
@@ -959,23 +1087,23 @@ void TestInstantiation::test_strategicB() {
     CPPUNIT_ASSERT_EQUAL(
         std::string(
             "strategic(1).\n"
-            "strategic(1):-strategic(5);strategic(2).\n"
-            "strategic(1):-strategic(5);strategic(3).\n"
+            "strategic(1):-strategic(5),strategic(2).\n"
+            "strategic(1):-strategic(5),strategic(3).\n"
             "strategic(1);strategic(6).\n"
             "strategic(1);strategic(6).\n"
-            "strategic(2):-strategic(6);strategic(3);strategic(1).\n"
-            "strategic(2):-strategic(6);strategic(3);strategic(5).\n"
+            "strategic(2):-strategic(6),strategic(3),strategic(1).\n"
+            "strategic(2):-strategic(6),strategic(3),strategic(5).\n"
             "strategic(2);strategic(4).\n"
             "strategic(2);strategic(5).\n"
             "strategic(2);strategic(5).\n"
             "strategic(2);strategic(6).\n"
             "strategic(2);strategic(6).\n"
-            "strategic(3):-strategic(4);strategic(1);strategic(5).\n"
-            "strategic(3):-strategic(4);strategic(1);strategic(6).\n"
+            "strategic(3):-strategic(4),strategic(1),strategic(5).\n"
+            "strategic(3):-strategic(4),strategic(1),strategic(6).\n"
             "strategic(4).\n"
             "strategic(4).\n"
-            "strategic(4):-strategic(2);strategic(5).\n"
-            "strategic(4):-strategic(2);strategic(6).\n"
+            "strategic(4):-strategic(2),strategic(5).\n"
+            "strategic(4):-strategic(2),strategic(6).\n"
             "strategic(4);strategic(2).\n"
             "strategic(4);strategic(2).\n"
             "strategic(4);strategic(3).\n"
@@ -1001,7 +1129,7 @@ void TestInstantiation::test_strategicB() {
 void TestInstantiation::test_optimize() {
     CPPUNIT_ASSERT_EQUAL(
         std::string(
-            "#count{1,0,p(1):p(1);1,0,p(2):p(2);1,0,p(3):p(3);1,0,p(4):p(4)}.\n"
+            "#count{0,p(1):p(1);0,p(2):p(2);0,p(3):p(3);0,p(4):p(4)}.\n"
             ":~p(1).[1@0]\n"
             ":~p(2).[2@0]\n"
             ":~p(3).[3@0]\n"
@@ -1012,7 +1140,7 @@ void TestInstantiation::test_optimize() {
             ":~p(X).[X@0]"));
     CPPUNIT_ASSERT_EQUAL(
         std::string(
-            "#count{1,0,p(1):p(1);1,0,p(2):p(2);1,0,p(3):p(3);1,0,p(4):p(4)}.\n"
+            "#count{0,p(1):p(1);0,p(2):p(2);0,p(3):p(3);0,p(4):p(4)}.\n"
             ":~p(1).[1@0]\n"
             ":~p(2).[2@0]\n"
             ":~p(3).[3@0]\n"
@@ -1023,7 +1151,7 @@ void TestInstantiation::test_optimize() {
             "#minimize{X@0:p(X)}."));
     CPPUNIT_ASSERT_EQUAL(
         std::string(
-            "#count{1,0,p(1):p(1);1,0,p(2):p(2);1,0,p(3):p(3);1,0,p(4):p(4)}.\n"
+            "#count{0,p(1):p(1);0,p(2):p(2);0,p(3):p(3);0,p(4):p(4)}.\n"
             ":~p(1).[-1@0]\n"
             ":~p(2).[-2@0]\n"
             ":~p(3).[-3@0]\n"
@@ -1035,24 +1163,24 @@ void TestInstantiation::test_optimize() {
     Gringo::Test::Messages msg;
     CPPUNIT_ASSERT_EQUAL(
         std::string(
-            "#count{1,0,p(1):p(1);1,0,p(2):p(2);1,0,p(3):p(3);1,0,p(4):p(4)}.\n"
+            "#count{0,p(1):p(1);0,p(2):p(2);0,p(3):p(3);0,p(4):p(4)}.\n"
             ":~.[1@1]\n"
+            ":~p(1),p(1).[1@1,f,g]\n"
             ":~p(1).[1@0]\n"
             ":~p(1).[1@2]\n"
-            ":~p(1);p(1).[1@1,f,g]\n"
+            ":~p(2),p(2).[2@2,f,g]\n"
             ":~p(2).[2@0]\n"
             ":~p(2).[2@2]\n"
-            ":~p(2);p(2).[2@2,f,g]\n"
+            ":~p(3),p(3).[3@3,f,g]\n"
             ":~p(3).[3@0]\n"
             ":~p(3).[3@2]\n"
-            ":~p(3);p(3).[3@3,f,g]\n"
+            ":~p(4),p(4).[4@4,f,g]\n"
             ":~p(4).[4@0]\n"
-            ":~p(4).[4@2]\n"
-            ":~p(4);p(4).[4@4,f,g]\n"),
+            ":~p(4).[4@2]\n"),
         ground(
             "{p((1..4))}."
             "#minimize{X:p(X); X@2:p(X); f@f; 1@1; X@X,f,g:p(X),p(X)}."));
-    CPPUNIT_ASSERT_EQUAL(S("[-:1:41-42: warning: weak constraint not defined for weight, tuple is ignored:\n  f\n]"), IO::to_string(msg));
+    CPPUNIT_ASSERT_EQUAL(S("[-:1:41-44: info: tuple ignored:\n  f\n]"), IO::to_string(msg));
 }
 
 void TestInstantiation::test_neg() {
@@ -1062,10 +1190,10 @@ void TestInstantiation::test_neg() {
             "-q(2):-not not -q(2).\n"
             "-q(3):-not not -q(3).\n"
             "-q(4):-not not -q(4).\n"
-            ":-q(1);-q(1).\n"
-            ":-q(2);-q(2).\n"
-            ":-q(3);-q(3).\n"
-            ":-q(4);-q(4).\n"
+            ":-q(1),-q(1).\n"
+            ":-q(2),-q(2).\n"
+            ":-q(3),-q(3).\n"
+            ":-q(4),-q(4).\n"
             "p(1).\n"
             "p(2).\n"
             "p(3).\n"

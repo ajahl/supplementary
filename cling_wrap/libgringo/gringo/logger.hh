@@ -34,16 +34,15 @@ namespace Gringo {
 // {{{ declaration of Warnings and Errors
 
 enum Warnings {
-    W_DEFINE_REDEFINTION,    //< Constant defined multiple times.
-    W_DEFINE_CYCLIC,         //< Constant definition is cyclic.
-    W_TERM_UNDEFINED,        //< Undefined arithmetic operation or weight of aggregate.
+    W_OPERATION_UNDEFINED,   //< Undefined arithmetic operation or weight of aggregate.
     W_ATOM_UNDEFINED,        //< Undefined atom in program.
-    W_NONMONOTONE_AGGREGATE, //< An aggregate that cannot be translated to lparse directly
     W_FILE_INCLUDED,         //< Same file included multiple times.
+    W_VARIABLE_UNBOUNDED,    //< CSP Domain undefined.
+    W_GLOBAL_VARIABLE,       //< Global variable in tuple of aggregate element.
     W_TOTAL,                 //< Not a warning but the total number of warnings.
 };
 
-enum Errors { ERROR };
+enum Errors { E_ERROR };
 
 // }}}
 // {{{ declaration of MessagePrinter
@@ -78,6 +77,9 @@ private:
 inline std::unique_ptr<MessagePrinter> &message_printer() {
     static std::unique_ptr<MessagePrinter> x(new DefaultMessagePrinter());
     return x;
+}
+inline void reset_message_printer() {
+    message_printer().reset(new DefaultMessagePrinter());
 }
 
 // }}}

@@ -63,14 +63,12 @@ namespace {
 
 
 ULit rewrite(ULit &&x) {
-    unsigned auxNum = 0;
     Projections project;
     Literal::AssignVec assign;
-    Term::DotsMap dots;
-    Term::ScriptMap scripts;
+    SimplifyState state;
     Term::ArithmeticsMap arith;
-    x->simplify(project, dots, scripts, auxNum);
-    x->rewriteArithmetics(arith, assign, auxNum);
+    x->simplify(project, state);
+    x->rewriteArithmetics(arith, assign, state.gen);
     return std::move(x);
 }
 
@@ -84,41 +82,41 @@ void TestLiteral::setUp() { }
 void TestLiteral::tearDown() { }
 
 void TestLiteral::test_print() {
-    CPPUNIT_ASSERT_EQUAL(std::string("x"), to_string(pred(NAF::POS, val("x"))));
-    CPPUNIT_ASSERT_EQUAL(std::string("not x"), to_string(pred(NAF::NOT, val("x"))));
-    CPPUNIT_ASSERT_EQUAL(std::string("not not x"), to_string(pred(NAF::NOTNOT, val("x"))));
-    CPPUNIT_ASSERT_EQUAL(std::string("x==y"), to_string(rel(Relation::EQ, val("x"), val("y"))));
-    CPPUNIT_ASSERT_EQUAL(std::string("#range(x,y,z)"), to_string(range(val("x"), val("y"), val("z"))));
-    CPPUNIT_ASSERT_EQUAL(std::string("1$*$x$+1$*$y$<=23$<=42"), to_string(csplit(cspadd(cspmul(val(1), val("x")), cspmul(val(1), val("y"))), Relation::LEQ, cspadd(cspmul(val("23"))), Relation::LEQ, cspadd(cspmul(val("42"))))));
+    CPPUNIT_ASSERT_EQUAL(std::string("x"), to_string(pred(NAF::POS, val(ID("x")))));
+    CPPUNIT_ASSERT_EQUAL(std::string("not x"), to_string(pred(NAF::NOT, val(ID("x")))));
+    CPPUNIT_ASSERT_EQUAL(std::string("not not x"), to_string(pred(NAF::NOTNOT, val(ID("x")))));
+    CPPUNIT_ASSERT_EQUAL(std::string("x=y"), to_string(rel(Relation::EQ, val(ID("x")), val(ID("y")))));
+    CPPUNIT_ASSERT_EQUAL(std::string("#range(x,y,z)"), to_string(range(val(ID("x")), val(ID("y")), val(ID("z")))));
+    CPPUNIT_ASSERT_EQUAL(std::string("1$*$x$+1$*$y$<=23$<=42"), to_string(csplit(cspadd(cspmul(val(NUM(1)), val(ID("x"))), cspmul(val(NUM(1)), val(ID("y")))), Relation::LEQ, cspadd(cspmul(val(ID("23")))), Relation::LEQ, cspadd(cspmul(val(ID("42")))))));
 }
 
 void TestLiteral::test_clone() {
-    CPPUNIT_ASSERT_EQUAL(std::string("x"), to_string(get_clone(pred(NAF::POS, val("x")))));
-    CPPUNIT_ASSERT_EQUAL(std::string("not x"), to_string(get_clone(pred(NAF::NOT, val("x")))));
-    CPPUNIT_ASSERT_EQUAL(std::string("not not x"), to_string(get_clone(pred(NAF::NOTNOT, val("x")))));
-    CPPUNIT_ASSERT_EQUAL(std::string("x==x"), to_string(get_clone(rel(Relation::EQ, val("x"), val("x")))));
-    CPPUNIT_ASSERT_EQUAL(std::string("#range(x,y,z)"), to_string(get_clone(range(val("x"), val("y"), val("z")))));
-    CPPUNIT_ASSERT_EQUAL(std::string("1$*$x$+1$*$y$<=23$<=42"), to_string(get_clone(csplit(cspadd(cspmul(val(1), val("x")), cspmul(val(1), val("y"))), Relation::LEQ, cspadd(cspmul(val("23"))), Relation::LEQ, cspadd(cspmul(val("42")))))));
+    CPPUNIT_ASSERT_EQUAL(std::string("x"), to_string(get_clone(pred(NAF::POS, val(ID("x"))))));
+    CPPUNIT_ASSERT_EQUAL(std::string("not x"), to_string(get_clone(pred(NAF::NOT, val(ID("x"))))));
+    CPPUNIT_ASSERT_EQUAL(std::string("not not x"), to_string(get_clone(pred(NAF::NOTNOT, val(ID("x"))))));
+    CPPUNIT_ASSERT_EQUAL(std::string("x=x"), to_string(get_clone(rel(Relation::EQ, val(ID("x")), val(ID("x"))))));
+    CPPUNIT_ASSERT_EQUAL(std::string("#range(x,y,z)"), to_string(get_clone(range(val(ID("x")), val(ID("y")), val(ID("z"))))));
+    CPPUNIT_ASSERT_EQUAL(std::string("1$*$x$+1$*$y$<=23$<=42"), to_string(get_clone(csplit(cspadd(cspmul(val(NUM(1)), val(ID("x"))), cspmul(val(NUM(1)), val(ID("y")))), Relation::LEQ, cspadd(cspmul(val(ID("23")))), Relation::LEQ, cspadd(cspmul(val(ID("42"))))))));
 }
 
 void TestLiteral::test_hash() {
     char const *msg = "warning: hashes are very unlikely to collide";
-    CPPUNIT_ASSERT_MESSAGE(msg, pred(NAF::POS, val("x"))->hash() == pred(NAF::POS, val("x"))->hash());
-    CPPUNIT_ASSERT_MESSAGE(msg, !(pred(NAF::POS, val("x"))->hash() == pred(NAF::NOT, val("x"))->hash()));
-    CPPUNIT_ASSERT_MESSAGE(msg, !(pred(NAF::POS, val("x"))->hash() == pred(NAF::POS, val("y"))->hash()));
-    CPPUNIT_ASSERT_MESSAGE(msg, rel(Relation::EQ, val("x"), val("x"))->hash() == rel(Relation::EQ, val("x"), val("x"))->hash());
-    CPPUNIT_ASSERT_MESSAGE(msg, !(rel(Relation::EQ, val("x"), val("x"))->hash() == rel(Relation::LT, val("x"), val("x"))->hash()));
-    CPPUNIT_ASSERT_MESSAGE(msg, !(rel(Relation::EQ, val("x"), val("x"))->hash() == rel(Relation::EQ, val("y"), val("x"))->hash()));
-    CPPUNIT_ASSERT_MESSAGE(msg, !(rel(Relation::EQ, val("x"), val("x"))->hash() == rel(Relation::EQ, val("x"), val("y"))->hash()));
-    CPPUNIT_ASSERT_MESSAGE(msg, range(val("x"), val("y"), val("z"))->hash() == range(val("x"), val("y"), val("z"))->hash());
-    CPPUNIT_ASSERT_MESSAGE(msg, !(range(val("x"), val("x"), val("z"))->hash() == range(val("x"), val("y"), val("z"))->hash()));
-    CPPUNIT_ASSERT_MESSAGE(msg, !(range(val("x"), val("y"), val("x"))->hash() == range(val("x"), val("y"), val("z"))->hash()));
-    CPPUNIT_ASSERT_MESSAGE(msg, !(range(val("y"), val("y"), val("z"))->hash() == range(val("x"), val("y"), val("z"))->hash()));
-    CPPUNIT_ASSERT_MESSAGE(msg,  (cspmul(val(1), val("x")).hash() == cspmul(val(1), val("x")).hash()));
-    CPPUNIT_ASSERT_MESSAGE(msg, !(cspmul(val(1), val("x")).hash() == cspmul(val(2), val("x")).hash()));
-    CPPUNIT_ASSERT_MESSAGE(msg, !(cspmul(val(1), val("y")).hash() == cspmul(val(1), val("x")).hash()));
-    CPPUNIT_ASSERT_MESSAGE(msg, !(cspmul(val(1)).hash() == cspmul(val(1), val("x")).hash()));
-    auto mt = [](int i) { return cspmul(val(i), var("x")); };
+    CPPUNIT_ASSERT_MESSAGE(msg, pred(NAF::POS, val(ID("x")))->hash() == pred(NAF::POS, val(ID("x")))->hash());
+    CPPUNIT_ASSERT_MESSAGE(msg, !(pred(NAF::POS, val(ID("x")))->hash() == pred(NAF::NOT, val(ID("x")))->hash()));
+    CPPUNIT_ASSERT_MESSAGE(msg, !(pred(NAF::POS, val(ID("x")))->hash() == pred(NAF::POS, val(ID("y")))->hash()));
+    CPPUNIT_ASSERT_MESSAGE(msg, rel(Relation::EQ, val(ID("x")), val(ID("x")))->hash() == rel(Relation::EQ, val(ID("x")), val(ID("x")))->hash());
+    CPPUNIT_ASSERT_MESSAGE(msg, !(rel(Relation::EQ, val(ID("x")), val(ID("x")))->hash() == rel(Relation::LT, val(ID("x")), val(ID("x")))->hash()));
+    CPPUNIT_ASSERT_MESSAGE(msg, !(rel(Relation::EQ, val(ID("x")), val(ID("x")))->hash() == rel(Relation::EQ, val(ID("y")), val(ID("x")))->hash()));
+    CPPUNIT_ASSERT_MESSAGE(msg, !(rel(Relation::EQ, val(ID("x")), val(ID("x")))->hash() == rel(Relation::EQ, val(ID("x")), val(ID("y")))->hash()));
+    CPPUNIT_ASSERT_MESSAGE(msg, range(val(ID("x")), val(ID("y")), val(ID("z")))->hash() == range(val(ID("x")), val(ID("y")), val(ID("z")))->hash());
+    CPPUNIT_ASSERT_MESSAGE(msg, !(range(val(ID("x")), val(ID("x")), val(ID("z")))->hash() == range(val(ID("x")), val(ID("y")), val(ID("z")))->hash()));
+    CPPUNIT_ASSERT_MESSAGE(msg, !(range(val(ID("x")), val(ID("y")), val(ID("x")))->hash() == range(val(ID("x")), val(ID("y")), val(ID("z")))->hash()));
+    CPPUNIT_ASSERT_MESSAGE(msg, !(range(val(ID("y")), val(ID("y")), val(ID("z")))->hash() == range(val(ID("x")), val(ID("y")), val(ID("z")))->hash()));
+    CPPUNIT_ASSERT_MESSAGE(msg,  (cspmul(val(NUM(1)), val(ID("x"))).hash() == cspmul(val(NUM(1)), val(ID("x"))).hash()));
+    CPPUNIT_ASSERT_MESSAGE(msg, !(cspmul(val(NUM(1)), val(ID("x"))).hash() == cspmul(val(NUM(2)), val(ID("x"))).hash()));
+    CPPUNIT_ASSERT_MESSAGE(msg, !(cspmul(val(NUM(1)), val(ID("y"))).hash() == cspmul(val(NUM(1)), val(ID("x"))).hash()));
+    CPPUNIT_ASSERT_MESSAGE(msg, !(cspmul(val(NUM(1))).hash() == cspmul(val(NUM(1)), val(ID("x"))).hash()));
+    auto mt = [](int i) { return cspmul(val(NUM(i)), var("x")); };
     CPPUNIT_ASSERT_MESSAGE(msg,  (cspadd(mt(1), mt(2), mt(3)).hash() == cspadd(mt(1), mt(2), mt(3)).hash()));
     CPPUNIT_ASSERT_MESSAGE(msg, !(cspadd(mt(2), mt(2), mt(3)).hash() == cspadd(mt(1), mt(2), mt(3)).hash()));
     CPPUNIT_ASSERT_MESSAGE(msg, !(cspadd(mt(1), mt(3), mt(3)).hash() == cspadd(mt(1), mt(2), mt(3)).hash()));
@@ -134,22 +132,22 @@ void TestLiteral::test_hash() {
 }
 
 void TestLiteral::test_equal() {
-    CPPUNIT_ASSERT(is_value_equal_to(pred(NAF::POS, val("x")), pred(NAF::POS, val("x"))));
-    CPPUNIT_ASSERT(!is_value_equal_to(pred(NAF::POS, val("x")), pred(NAF::NOT, val("x"))));
-    CPPUNIT_ASSERT(!is_value_equal_to(pred(NAF::POS, val("x")), pred(NAF::POS, val("y"))));
-    CPPUNIT_ASSERT(is_value_equal_to(rel(Relation::EQ, val("x"), val("x")), rel(Relation::EQ, val("x"), val("x"))));
-    CPPUNIT_ASSERT(!is_value_equal_to(rel(Relation::EQ, val("x"), val("x")), rel(Relation::LT, val("x"), val("x"))));
-    CPPUNIT_ASSERT(!is_value_equal_to(rel(Relation::EQ, val("x"), val("x")), rel(Relation::EQ, val("y"), val("x"))));
-    CPPUNIT_ASSERT(!is_value_equal_to(rel(Relation::EQ, val("x"), val("x")), rel(Relation::EQ, val("x"), val("y"))));
-    CPPUNIT_ASSERT(is_value_equal_to(range(val("x"), val("y"), val("z")), range(val("x"), val("y"), val("z"))));
-    CPPUNIT_ASSERT(!is_value_equal_to(range(val("x"), val("x"), val("z")), range(val("x"), val("y"), val("z"))));
-    CPPUNIT_ASSERT(!is_value_equal_to(range(val("x"), val("y"), val("x")), range(val("x"), val("y"), val("z"))));
-    CPPUNIT_ASSERT(!is_value_equal_to(range(val("y"), val("y"), val("z")), range(val("x"), val("y"), val("z"))));
-    CPPUNIT_ASSERT( (cspmul(val(1), val("x")) == cspmul(val(1), val("x"))));
-    CPPUNIT_ASSERT(!(cspmul(val(1), val("x")) == cspmul(val(2), val("x"))));
-    CPPUNIT_ASSERT(!(cspmul(val(1), val("y")) == cspmul(val(1), val("x"))));
-    CPPUNIT_ASSERT(!(cspmul(val(1)) == cspmul(val(1), val("x"))));
-    auto mt = [](int i) { return cspmul(val(i), var("x")); };
+    CPPUNIT_ASSERT(is_value_equal_to(pred(NAF::POS, val(ID("x"))), pred(NAF::POS, val(ID("x")))));
+    CPPUNIT_ASSERT(!is_value_equal_to(pred(NAF::POS, val(ID("x"))), pred(NAF::NOT, val(ID("x")))));
+    CPPUNIT_ASSERT(!is_value_equal_to(pred(NAF::POS, val(ID("x"))), pred(NAF::POS, val(ID("y")))));
+    CPPUNIT_ASSERT(is_value_equal_to(rel(Relation::EQ, val(ID("x")), val(ID("x"))), rel(Relation::EQ, val(ID("x")), val(ID("x")))));
+    CPPUNIT_ASSERT(!is_value_equal_to(rel(Relation::EQ, val(ID("x")), val(ID("x"))), rel(Relation::LT, val(ID("x")), val(ID("x")))));
+    CPPUNIT_ASSERT(!is_value_equal_to(rel(Relation::EQ, val(ID("x")), val(ID("x"))), rel(Relation::EQ, val(ID("y")), val(ID("x")))));
+    CPPUNIT_ASSERT(!is_value_equal_to(rel(Relation::EQ, val(ID("x")), val(ID("x"))), rel(Relation::EQ, val(ID("x")), val(ID("y")))));
+    CPPUNIT_ASSERT(is_value_equal_to(range(val(ID("x")), val(ID("y")), val(ID("z"))), range(val(ID("x")), val(ID("y")), val(ID("z")))));
+    CPPUNIT_ASSERT(!is_value_equal_to(range(val(ID("x")), val(ID("x")), val(ID("z"))), range(val(ID("x")), val(ID("y")), val(ID("z")))));
+    CPPUNIT_ASSERT(!is_value_equal_to(range(val(ID("x")), val(ID("y")), val(ID("x"))), range(val(ID("x")), val(ID("y")), val(ID("z")))));
+    CPPUNIT_ASSERT(!is_value_equal_to(range(val(ID("y")), val(ID("y")), val(ID("z"))), range(val(ID("x")), val(ID("y")), val(ID("z")))));
+    CPPUNIT_ASSERT( (cspmul(val(NUM(1)), val(ID("x"))) == cspmul(val(NUM(1)), val(ID("x")))));
+    CPPUNIT_ASSERT(!(cspmul(val(NUM(1)), val(ID("x"))) == cspmul(val(NUM(2)), val(ID("x")))));
+    CPPUNIT_ASSERT(!(cspmul(val(NUM(1)), val(ID("y"))) == cspmul(val(NUM(1)), val(ID("x")))));
+    CPPUNIT_ASSERT(!(cspmul(val(NUM(1))) == cspmul(val(NUM(1)), val(ID("x")))));
+    auto mt = [](int i) { return cspmul(val(NUM(i)), var("x")); };
     CPPUNIT_ASSERT( (cspadd(mt(1), mt(2), mt(3)) == cspadd(mt(1), mt(2), mt(3))));
     CPPUNIT_ASSERT(!(cspadd(mt(2), mt(2), mt(3)) == cspadd(mt(1), mt(2), mt(3))));
     CPPUNIT_ASSERT(!(cspadd(mt(1), mt(3), mt(3)) == cspadd(mt(1), mt(2), mt(3))));
@@ -165,9 +163,9 @@ void TestLiteral::test_equal() {
 }
 
 void TestLiteral::test_unpool() {
-    CPPUNIT_ASSERT_EQUAL(std::string("[x,y,z]"), to_string(pred(NAF::POS, pool(val("x"), val("y"), val("z")))->unpool(true)));
-    CPPUNIT_ASSERT_EQUAL(std::string("[not x,not y,not z]"), to_string(pred(NAF::NOT, pool(val("x"), val("y"), val("z")))->unpool(true)));
-    CPPUNIT_ASSERT_EQUAL(std::string("[a!=x,a!=y,b!=x,b!=y]"), to_string(rel(Relation::NEQ, pool(val("a"), val("b")), pool(val("x"), val("y")))->unpool(true)));
+    CPPUNIT_ASSERT_EQUAL(std::string("[x,y,z]"), to_string(pred(NAF::POS, pool(val(ID("x")), val(ID("y")), val(ID("z"))))->unpool(true)));
+    CPPUNIT_ASSERT_EQUAL(std::string("[not x,not y,not z]"), to_string(pred(NAF::NOT, pool(val(ID("x")), val(ID("y")), val(ID("z"))))->unpool(true)));
+    CPPUNIT_ASSERT_EQUAL(std::string("[a!=x,a!=y,b!=x,b!=y]"), to_string(rel(Relation::NEQ, pool(val(ID("a")), val(ID("b"))), pool(val(ID("x")), val(ID("y"))))->unpool(true)));
     CPPUNIT_ASSERT_EQUAL(std::string(
         "[1$*$x$+1$*$y$<=23$<=42"
         ",2$*$x$+1$*$y$<=23$<=42"
@@ -181,24 +179,24 @@ void TestLiteral::test_unpool() {
         ), to_string(
         csplit(
             cspadd(
-                cspmul(pool(val(1), val(2)), pool(val("x"), val("y"))),
-                cspmul(val(1), val("y"))), 
+                cspmul(pool(val(NUM(1)), val(NUM(2))), pool(val(ID("x")), val(ID("y")))),
+                cspmul(val(NUM(1)), val(ID("y")))), 
             Relation::LEQ, 
-            cspadd(cspmul(val("23"))), 
+            cspadd(cspmul(val(ID("23")))), 
             Relation::LEQ, 
-            cspadd(cspmul(pool(val("42"), val(43)))))->unpool(true)));
+            cspadd(cspmul(pool(val(ID("42")), val(NUM(43))))))->unpool(true)));
 }
 
 void TestLiteral::test_rewrite() {
-    CPPUNIT_ASSERT_EQUAL(std::string("3"), to_string(rewrite(pred(NAF::POS, binop(BinOp::ADD, val(1), val(2))))));
-    CPPUNIT_ASSERT_EQUAL(std::string("3>7"), to_string(rewrite(rel(Relation::GT, binop(BinOp::ADD, val(1), val(2)), binop(BinOp::ADD, val(3), val(4))))));
+    CPPUNIT_ASSERT_EQUAL(std::string("3"), to_string(rewrite(pred(NAF::POS, binop(BinOp::ADD, val(NUM(1)), val(NUM(2)))))));
+    CPPUNIT_ASSERT_EQUAL(std::string("3>7"), to_string(rewrite(rel(Relation::GT, binop(BinOp::ADD, val(NUM(1)), val(NUM(2))), binop(BinOp::ADD, val(NUM(3)), val(NUM(4)))))));
     CPPUNIT_ASSERT_EQUAL(std::string("3$*$5$+4$*$y$<=42"),
         to_string(rewrite(csplit(
             cspadd(
-                cspmul(binop(BinOp::ADD, val(1), val(2)), binop(BinOp::ADD, val(2), val(3))),
-                cspmul(binop(BinOp::ADD, val(1), val(3)), val("y"))), 
+                cspmul(binop(BinOp::ADD, val(NUM(1)), val(NUM(2))), binop(BinOp::ADD, val(NUM(2)), val(NUM(3)))),
+                cspmul(binop(BinOp::ADD, val(NUM(1)), val(NUM(3))), val(ID("y")))), 
             Relation::LEQ, 
-            cspadd(cspmul(binop(BinOp::MUL, val(6), val(7))))))));
+            cspadd(cspmul(binop(BinOp::MUL, val(NUM(6)), val(NUM(7)))))))));
 }
 
 TestLiteral::~TestLiteral() { }

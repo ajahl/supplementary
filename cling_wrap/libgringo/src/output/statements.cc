@@ -20,6 +20,7 @@
 
 #include <gringo/output/statements.hh>
 #include <gringo/output/lparseoutputter.hh>
+#include <gringo/output/aggregates.hh>
 
 namespace Gringo { namespace Output {
 
@@ -49,7 +50,37 @@ std::ostream &operator<<(std::ostream &out, IntervalSet<Value> const &x) {
     return out;
 }
 
+} // namespace Debug
+
+namespace {
+
+template <typename B, typename F>
+void printPlainBody(std::ostream &out, B const &body, F get) {
+    int sep = 0;
+    for (auto &x : body) {
+        switch (sep) { 
+        case 1: { out << ","; break; }
+        case 2: { out << ";"; break; }
+        }
+        get(x).printPlain(out);
+        sep = static_cast<bool>(get(x).needsSemicolon()) + 1;
+    }
+}
+
+template <class U>
+struct deref {
+    auto operator ()(U const &x) const -> decltype(*x) { return *x; }
+    auto operator ()(U &x) const -> decltype(*x) { return *x; }
+};
+
+template <class U>
+struct id {
+    U const &operator ()(U const &x) const { return x; }
+    U &operator ()(U &x) const { return x; }
+};
+
 } // namespace
+
 
 // }}}
 
@@ -59,14 +90,10 @@ Rule::Rule() { }
 Rule::Rule(PredicateDomain::element_type *head, ULitVec &&body) : head(head), body(std::move(body)) { }
 void Rule::printPlain(std::ostream &out) const {
     bool isShow = head && head->first.sig() == Signature("#show", 2);
-    if (isShow)    { out << "#show " << ((*(head->first.args().begin()+1)).num() == 1 ? "$" : "") << *head->first.args().begin(); }
+    if (isShow)    { out << "#show " << ((*(head->first.args().begin()+1)).num() == 1 ? "$" : "") << head->first.args().front(); }
     else if (head) { out << head->first; }
     if (!body.empty() || !head) { out << (isShow ? ":" : ":-"); }
-    if (!body.empty()) {
-        auto it(body.begin()), ie(body.end());
-        it->get()->printPlain(out);
-        for (++it; it != ie; ++it) { out << ";"; it->get()->printPlain(out); }
-    }
+    printPlainBody(out, body, deref<ULit>());
     out << ".\n";
 }
 void Rule::toLparse(LparseTranslator &x) {
@@ -102,7 +129,7 @@ void Rule::printLparse(LparseOutputter &out) const {
     out.printBasicRule(headUid, lits);
 }
 Rule *Rule::clone() const {
-    auto ret(make_unique<Rule>());
+    auto ret(gringo_make_unique<Rule>());
     ret->body = get_clone(body);
     ret->head = head;
     return ret.release();
@@ -119,18 +146,14 @@ Rule::~Rule() { }
 
 void RuleRef::printPlain(std::ostream &out) const {
     bool isShow = head && head->first.sig() == Signature("#show", 2);
-    if (isShow)    { out << "#show " << ((*(head->first.args().begin()+1)).num() == 1 ? "$" : "") << *head->first.args().begin(); }
+    if (isShow)    { out << "#show " << ((*(head->first.args().begin()+1)).num() == 1 ? "$" : "") << head->first.args().front(); }
     else if (head) { out << head->first; }
     if (!body.empty() || !head) { out << (isShow ? ":" : ":-"); }
-    if (!body.empty()) {
-        auto it(body.begin()), ie(body.end());
-        it->get().printPlain(out);
-        for (++it; it != ie; ++it) { out << ";"; it->get().printPlain(out); }
-    }
+    printPlainBody(out, body, id<Literal>());
     out << ".\n";
 }
 Rule *RuleRef::clone() const {
-    auto ret(make_unique<Rule>());
+    auto ret(gringo_make_unique<Rule>());
     for (Literal &x : body) { ret->body.emplace_back(ULit(x.clone())); }
     ret->head = head;
     return ret.release();
@@ -187,28 +210,6 @@ RuleRef::~RuleRef() { }
 // }}}
 // {{{ definition of LparseRule
 
-LparseRule::LparseRule(ULitVec &&body) : LparseRule(HeadVec(), std::move(body), false) { }
-LparseRule::LparseRule(ULit &&b1, ULit &&b2) : LparseRule(ULitVec()) {
-    if (b1) { body.emplace_back(std::move(b1)); }
-    if (b2) { body.emplace_back(std::move(b2)); }
-}
-LparseRule::LparseRule(SAuxAtom head, ULit &&b1, ULit &&b2) : LparseRule(head, ULitVec()) {
-    if (b1) { body.emplace_back(std::move(b1)); }
-    if (b2) { body.emplace_back(std::move(b2)); }
-}
-LparseRule::LparseRule(PredicateDomain::element_type &head, ULit &&b1, ULit &&b2) : LparseRule(head, ULitVec()) {
-    if (b1) { body.emplace_back(std::move(b1)); }
-    if (b2) { body.emplace_back(std::move(b2)); }
-}
-LparseRule::LparseRule(SAuxAtom head, ULitVec &&body) : choice(false), body(std::move(body)) {
-    assert(head);
-    auxHead.emplace_back(head);
-}
-LparseRule::LparseRule(PredicateDomain::element_type &head, ULitVec &&body) : choice(false), body(std::move(body)) {
-    this->head.emplace_back(head);
-}
-LparseRule::LparseRule(SAuxAtomVec &&head, ULitVec &&body, bool choice) : choice(choice), auxHead(std::move(head)), body(std::move(body)) { }
-LparseRule::LparseRule(HeadVec &&head, ULitVec &&body, bool choice) : choice(choice), head(std::move(head)), body(std::move(body)) { }
 LparseRule::LparseRule(HeadVec &&head, SAuxAtomVec &&auxHead, ULitVec &&body, bool choice) : choice(choice), head(std::move(head)), auxHead(std::move(auxHead)), body(std::move(body)) { }
 void LparseRule::printPlain(std::ostream &out) const {
     if (choice) { out << "{"; }
@@ -218,9 +219,7 @@ void LparseRule::printPlain(std::ostream &out) const {
     if (choice) { out << "}"; }
     if (!body.empty()) {
         out << ":-";
-        auto it(body.begin()), ie(body.end());
-        it->get()->printPlain(out);
-        for (++it; it != ie; ++it) { out << ";"; it->get()->printPlain(out); }
+        printPlainBody(out, body, deref<ULit>());
     }
     out << ".\n";
 }
@@ -267,7 +266,7 @@ void LparseRule::printLparse(LparseOutputter &out) const {
     else                        { out.printDisjunctiveRule(atoms, lits); }
 }
 LparseRule *LparseRule::clone() const {
-    auto ret(make_unique<LparseRule>(get_clone(head), get_clone(auxHead), get_clone(body), choice));
+    auto ret(gringo_make_unique<LparseRule>(get_clone(head), get_clone(auxHead), get_clone(body), choice));
     return ret.release();
 }
 bool LparseRule::isIncomplete() const { return false; }
@@ -316,7 +315,7 @@ void WeightRule::printLparse(LparseOutputter &out) const {
     }
 }
 WeightRule *WeightRule::clone() const {
-    auto ret(make_unique<WeightRule>(head, lower, get_clone(body)));
+    auto ret(gringo_make_unique<WeightRule>(head, lower, get_clone(body)));
     return ret.release();
 }
 bool WeightRule::isIncomplete() const { return false; }
@@ -335,13 +334,13 @@ HeadAggregateState::HeadAggregateState(AggregateFunction fun, unsigned generatio
     : _generation(generation) {
     switch (fun) {
         case AggregateFunction::MIN: {
-            valMin = Value(false);
-            valMax = Value(false);
+            valMin = Value::createSup();
+            valMax = Value::createSup();
             break;
         }
         case AggregateFunction::MAX: {
-            valMin = Value(true);
-            valMax = Value(true);
+            valMin = Value::createInf();
+            valMax = Value::createInf();
             break;
         }
         default: {
@@ -357,7 +356,7 @@ void HeadAggregateState::accumulate(ValVec const &tuple, AggregateFunction fun, 
         bool fact(lits.empty() && (!head || (head->second.defined() && head->second.fact(false))));
         auto ret(elems.emplace_back(std::piecewise_construct, std::forward_as_tuple(tuple), std::forward_as_tuple()));
         bool remove(fact && !ret.first->second.fact && !ret.second);
-        if (ret.second || remove || head) {
+        if (!ret.first->second.fact || head) { // even if the condition is a fact it has to be accumulated to capture choices
             auto &elem(ret.first->second);
             elem.fact = elem.fact || fact;
             Output::ULitVec uLits;
@@ -403,7 +402,7 @@ void HeadAggregateState::accumulate(ValVec const &tuple, AggregateFunction fun, 
 bool HeadAggregateState::defined() const { return true; }
 HeadAggregateState::Bounds::Interval HeadAggregateState::range(AggregateFunction fun) const {
     if (fun != AggregateFunction::MIN && fun != AggregateFunction::MAX) {
-        return {{clamp(intMin), true}, {clamp(intMax), true}};
+        return {{Value::createNum(clamp(intMin)), true}, {Value::createNum(clamp(intMax)), true}};
     }
     else { return {{valMin, true}, {valMax, true}}; }
 }
@@ -415,149 +414,60 @@ HeadAggregateState::element_type &HeadAggregateState::ignore() { throw std::logi
 // {{{ definition of HeadAggregateRule
 
 void HeadAggregateRule::toLparse(LparseTranslator &x) {
-    // TODO: this algorithm suffers from severe uglyness!!!
-    // TODO: handle empty bounds here...
-    auto rng(repr->range(fun));
-    if (rng.empty()) {
-        LparseRule(std::move(body)).toLparse(x);
+    auto range(repr->range(fun));
+    if (range.empty()) {
+        LRC().addBody(std::move(body)).toLparse(x);
         return;
     }
-    SAuxAtom b;
+    ULit bodyLit;
     if (!body.empty()) {
         // b :- body.
-        b = std::make_shared<AuxAtom>(x.auxAtom());
-        LparseRule(b, std::move(body)).toLparse(x);
+        bodyLit = getEqualClause(x, std::move(body), true, false);
     }
     using GroupByCond = unique_list<
-        std::pair<std::reference_wrapper<ULitVec>, std::pair<std::shared_ptr<AuxAtom>, std::vector<std::pair<FWValVec, HeadAggregateElement::Cond&>>>>, 
+        std::pair<std::reference_wrapper<ULitVec>, std::vector<std::pair<FWValVec, HeadAggregateElement::Cond&>>>, 
         extract_first<ULitVec>, 
         value_hash<ULitVec>, 
         value_equal_to<ULitVec>
     >;
+    BdAggrElemSet bdElems;
     GroupByCond groupByCond;
     for (auto &y : repr->elems) {
         for (auto &z : y.second.conds) {
             auto ret(groupByCond.emplace_back(std::piecewise_construct, std::forward_as_tuple(z.lits), std::forward_as_tuple()));
-            ret.first->second.second.emplace_back(y.first, z);
+            ret.first->second.emplace_back(y.first, z);
         }
     }
-    for (auto &y : groupByCond) {
-        if (!y.first.get().empty()) { 
+    for (auto &cond : groupByCond) {
+        ULit condLit;
+        if (!cond.first.get().empty()) { 
             // c :- C.
-            y.second.first = std::make_shared<AuxAtom>(x.auxAtom());
-            LparseRule(y.second.first, get_clone(y.first.get())).toLparse(x);
+            condLit = getEqualClause(x, get_clone(cond.first.get()), true, false);
         }
         // { heads } :- c, b.
-        LparseRule::HeadVec atoms;
-        for (auto &z : y.second.second) {
-            if (z.second.head) { atoms.emplace_back(*z.second.head); }
+        LRC choice(true);
+        for (auto &elem : cond.second) {
+            ULit head = elem.second.head ? gringo_make_unique<PredicateLiteral>(NAF::POS, *elem.second.head) : nullptr;
+            if (head) { choice.addHead(head); }
+            // e :- h, c.
+            auto bdElem = bdElems.emplace_back(std::piecewise_construct, std::forward_as_tuple(elem.first), std::forward_as_tuple());
+            bdElem.first->second.emplace_back();
+            if (condLit) { bdElem.first->second.back().emplace_back(get_clone(condLit)); }
+            if (head)    { bdElem.first->second.back().emplace_back(std::move(head)); }
         }
-        if (!atoms.empty()) {
-            ULitVec lits;
-            if (y.second.first) { lits.emplace_back(make_unique<AuxLiteral>(y.second.first, false)); }
-            if (b)              { lits.emplace_back(make_unique<AuxLiteral>(b, false)); }
-            LparseRule(std::move(atoms), std::move(lits), true).toLparse(x);
+        if (!choice.head.empty()) {
+            if (bodyLit) { choice.addBody(bodyLit); }
+            if (condLit) { choice.addBody(condLit); }
+            choice.toLparse(x);
         }
     }
-    if (!repr->bounds.contains(rng)) {
-        using TupleAtoms = std::unordered_map<FWValVec, SAuxAtom>;
-        TupleAtoms tupleAtoms;
-        using ULitValVec = std::vector<std::pair<ULit,Value>>;
-        ULitValVec elemVec;
-        for (auto &y : repr->elems) { 
-            Value weight(getWeight(fun, y.first));
-            if (y.second.conds.size() != 1 || !y.second.conds.front().head || !y.second.conds.front().lits.empty()) {
-                SAuxAtom atom(std::make_shared<AuxAtom>(x.auxAtom()));
-                tupleAtoms.emplace(y.first, atom);
-                elemVec.emplace_back(make_unique<AuxLiteral>(atom, false), weight);
-            }
-            else {
-                elemVec.emplace_back(make_unique<PredicateLiteral>(NAF::POS, *y.second.conds.front().head), weight);
-            }
-        }
-        // t :- c, h.
-        for (auto &y : groupByCond) {
-            for (auto &z : y.second.second) {
-                auto it(tupleAtoms.find(z.first));
-                if (it != tupleAtoms.end()) {
-                    LparseRule(
-                        it->second, 
-                        y.second.first ? make_unique<AuxLiteral>(y.second.first, false) : nullptr, 
-                        z.second.head  ? make_unique<PredicateLiteral>(NAF::POS, *z.second.head) : nullptr).toLparse(x);
-                }
-            }
-        }
-        switch (fun) {
-            case AggregateFunction::COUNT:
-            case AggregateFunction::SUMP:
-            case AggregateFunction::SUM: {
-                int  shift = 0;
-                WeightRule::ULitBoundVec elemPos;
-                for (auto &y : elemVec) {
-                    int weight = y.second.num();
-                    if (weight < 0) {
-                        shift+= -weight;
-                        SAuxAtom neg(std::make_shared<AuxAtom>(x.auxAtom()));
-                        LparseRule(neg, get_clone(y.first), nullptr).toLparse(x);
-                        elemPos.emplace_back(make_unique<AuxLiteral>(neg, true), -weight);
-                    }
-                    else { elemPos.emplace_back(get_clone(y.first), weight); }
-                }
-                
-                SAuxAtom aggr(std::make_shared<AuxAtom>(x.auxAtom()));
-                for (auto &y : repr->bounds) {
-                    ULitVec aLits;
-                    if (rng.left < y.left) {
-                        // a :- L { }.
-                        SAuxAtom a(std::make_shared<AuxAtom>(x.auxAtom()));
-                        WeightRule wr(a, std::max(0, toInt(y.left) + shift), get_clone(elemPos));
-                        wr.toLparse(x);
-                        aLits.emplace_back(make_unique<AuxLiteral>(a, false));
-                    }
-                    if (y.right < rng.right) {
-                        // a :- U+1 { }.
-                        SAuxAtom a(std::make_shared<AuxAtom>(x.auxAtom()));
-                        WeightRule wr(a, std::max(0, toInt(y.right) + 1 + shift), get_clone(elemPos));
-                        wr.toLparse(x);
-                        aLits.emplace_back(make_unique<AuxLiteral>(a, true));
-                    } 
-                    LparseRule(aggr, std::move(aLits)).toLparse(x);
-                }
-                // :- b, not aggr.
-                LparseRule(b ? make_unique<AuxLiteral>(b, false) : nullptr, make_unique<AuxLiteral>(aggr, true)).toLparse(x);
-                break;
-            }
-            case AggregateFunction::MIN:
-            case AggregateFunction::MAX: {
-                SAuxAtom aggr(std::make_shared<AuxAtom>(x.auxAtom()));
-                for (auto &y : repr->bounds) {
-                    ULitVec aLits;
-                    using namespace Debug;
-                    if (fun == AggregateFunction::MIN ? y.right < rng.right : rng.left < y.left) {
-                        SAuxAtom a(std::make_shared<AuxAtom>(x.auxAtom()));
-                        for (auto &z : elemVec) {
-                            // a :- 1 { between }
-                            if (y.contains(z.second)) { LparseRule(a, get_clone(z.first), nullptr).toLparse(x); }
-                        }
-                        aLits.emplace_back(make_unique<AuxLiteral>(a, false));
-                    }
-                    if (fun == AggregateFunction::MIN ? rng.left < y.left : y.right < rng.right) {
-                        SAuxAtom a(std::make_shared<AuxAtom>(x.auxAtom()));
-                        for (auto &z : elemVec) {
-                            if (fun == AggregateFunction::MIN ? z.second < y : y < z.second) {
-                                // if min:  a :- 1 { below }
-                                // eif max: a :- 1 { above }
-                                LparseRule(a, get_clone(z.first), nullptr).toLparse(x);
-                            }
-                        }
-                        aLits.emplace_back(make_unique<AuxLiteral>(a, true));
-                    }
-                    LparseRule(aggr, std::move(aLits)).toLparse(x);
-                }
-                LparseRule(b ? make_unique<AuxLiteral>(b, false) : nullptr, make_unique<AuxLiteral>(aggr, true)).toLparse(x);
-                break;
-            }
-        }
+
+    // :- b, not aggr.
+    if (!repr->bounds.contains(range)) {
+        ULit aggr = getEqualAggregate(x, fun, NAF::NOT, repr->bounds, range, bdElems, false);
+        LRC check;
+        if (bodyLit) { check.addBody(std::move(bodyLit)); }
+        check.addBody(std::move(aggr)).toLparse(x);
     }
 }
 void HeadAggregateRule::printLparse(LparseOutputter &) const {
@@ -588,14 +498,13 @@ void HeadAggregateRule::printPlain(std::ostream &out) const {
     for (; it != ie; ++it) { out << it->first << it->second; }
     if (!body.empty()) {
         out << ":-";
-        using namespace std::placeholders;
-        print_comma(out, body, ";", std::bind(&Literal::printPlain, _2, _1));
+        printPlainBody(out, body, deref<ULit>());
     }
     out << ".\n";
 }
 bool HeadAggregateRule::isIncomplete() const { return true; }
 HeadAggregateRule *HeadAggregateRule::clone() const { 
-    auto ret(make_unique<HeadAggregateRule>());
+    auto ret(gringo_make_unique<HeadAggregateRule>());
     ret->body   = get_clone(body);
     ret->bounds = bounds;
     ret->repr   = repr;
@@ -607,34 +516,81 @@ HeadAggregateRule::~HeadAggregateRule() { }
 // }}}
 // {{{ definition of DisjunctionState
 
-DisjunctionState::DisjunctionState() { throw std::runtime_error("must not happen"); }
-DisjunctionState::DisjunctionState(unsigned generation) : _generation(generation) { }
-void DisjunctionState::accumulate(PredicateDomain::element_type *head, LitVec const &lits) {
-    ULitVec uLits;
-    for (Literal &x : lits) { uLits.emplace_back(x.clone()); }
-    elems.emplace_back(head, std::move(uLits));
+DisjunctionElement::DisjunctionElement(Value repr)
+: repr(repr) { }
+
+DisjunctionElement::operator Value const & () const {
+    return repr;
 }
-bool DisjunctionState::defined() const { return true; }
-unsigned DisjunctionState::generation() const { return _generation; }
+
+DisjunctionElement::DisjunctionElement(DisjunctionElement &&) = default;
+DisjunctionElement &DisjunctionElement::operator=(DisjunctionElement &&) = default;
+
+void DisjunctionElement::print(std::ostream &out) const {
+    using namespace std::placeholders;
+    if (bodies.empty()) {
+        out << "#false";
+    }
+    else { 
+        if (heads.empty()) {
+            out << "#true";
+        }
+        else {
+            auto print_conjunction = [](std::ostream &out, ULitVec const &lits) {
+                if (lits.empty()) {
+                    out << "#false";
+                }
+                else {
+                    print_comma(out, lits, "|", std::bind(&Literal::printPlain, _2, _1));
+                }
+            };
+            print_comma(out, heads, "&", print_conjunction);
+        }
+        if (!bodies.front().empty()) {
+            out << ":";
+            auto print_disjunction = [](std::ostream &out, ULitVec const &lits) {
+                if (lits.empty()) {
+                    out << "#true";
+                }
+                else {
+                    print_comma(out, lits, "&", std::bind(&Literal::printPlain, _2, _1));
+                }
+            };
+            print_comma(out, bodies, "|", print_disjunction);
+        }
+    }
+}
+
+DisjunctionState::DisjunctionState() = default;
+
 bool DisjunctionState::fact(bool) const { return false; }
+
 DisjunctionState::element_type &DisjunctionState::ignore() { throw std::logic_error("DisjunctionState::ignore must not be called"); }
 
 // }}}
 // {{{ definition of DisjunctionRule
 
 void DisjunctionRule::toLparse(LparseTranslator &x) {
-    SAuxAtom            bdAtom;
-    SAuxAtomVec         djAuxHead;
-    LparseRule::HeadVec djHead;
+    bool isFact = false;
+    repr->elems.erase(std::remove_if(repr->elems.begin(), repr->elems.end(), [&isFact](DisjunctionState::Elem &elem){
+        if (elem.heads.empty() && elem.bodies.size() == 1 && elem.bodies.front().empty()) { 
+            isFact = true;
+        }
+        return elem.bodies.empty() || (elem.heads.size() == 1 && elem.heads.front().empty());
+        return false;
+    }), repr->elems.end());
+    if (isFact) { return; }
     if (body.empty()) {
         Value value;
         auto isBound = [&]() -> bool {
             if (repr->elems.empty()) { return false; }
             for (auto &y : repr->elems) {
-                if (y.first != nullptr) { return false; }
-                if (y.second.empty())   { return false; }
-                for (auto &z : y.second) {
-                    if (!z->isBound(value, false)) { return false; }
+                if (y.bodies.size() != 1 && !y.bodies.front().empty()) { return false; }
+                for (auto &z : y.heads) {
+                    if (z.size() != 1) { return false; }
+                    for (auto &u : z) {
+                        if (!u->isBound(value, false)) { return false; }
+                    }
                 }
             }
             return true;
@@ -643,69 +599,95 @@ void DisjunctionRule::toLparse(LparseTranslator &x) {
             std::vector<CSPBound> bounds;
             for (auto &y : repr->elems) {
                 bounds.emplace_back(std::numeric_limits<int>::min(), std::numeric_limits<int>::max()-1);
-                for (auto &z : y.second) { z->updateBound(bounds.back(), false); }
+                for (auto &z : y.heads) {
+                    for (auto &u : z) { u->updateBound(bounds.back(), false); }
+                }
             }
             x.addBounds(value, bounds);
             return;
         }
     }
-    for (auto &y : repr->elems) {
-        if (y.first && y.second.empty()) { djHead.emplace_back(*y.first); }
-        else {
-            // cdAtom :- y.second.
-            ULit cdLit;
-            ULit ncdLit;
-            if (y.second.size() == 1) { 
-                cdLit = std::move(y.second.front()); 
-                SAuxAtom ncdAtom(std::make_shared<AuxAtom>(x.auxAtom()));
-                LparseRule(ncdAtom, get_clone(cdLit), nullptr).toLparse(x);
-                ncdLit = make_unique<AuxLiteral>(ncdAtom, true);
+    LRC dj;
+    for (auto &elem : repr->elems) {
+        assert (!elem.bodies.empty());
+        ULit cond;
+        if (elem.bodies.size() == 1 && elem.bodies.front().size() == 1) {
+            // condition is singleton
+            cond = std::move(elem.bodies.front().front());
+        }
+        else if (elem.bodies.size() != 1 || !elem.bodies.front().empty()) {
+            // condition needs auxiliary variable
+            cond = x.makeAux();
+            for (auto &body : elem.bodies) {
+                LRC().addHead(cond).addBody(get_clone(body)).toLparse(x);
+            }
+        }
+        if (elem.heads.empty()) {
+            assert(cond);
+            // head is a fact
+            body.emplace_back(cond->negateLit(x));
+        }
+        else if (elem.heads.size() == 1) {
+            if (cond) {
+                ULit headAtom = x.makeAux();
+                for (auto &lit : elem.heads.front()) {
+                    LRC().addHead(headAtom).addBody(lit).addBody(cond).toLparse(x);
+                }
+                LRC().addHead(get_clone(elem.heads.front())).addBody(cond).addBody(headAtom).toLparse(x);
+                LRC().addBody(cond->negateLit(x)).addBody(headAtom).toLparse(x);
+                dj.addHead(headAtom);
             }
             else {
-                SAuxAtom cdAtom(std::make_shared<AuxAtom>(x.auxAtom()));
-                LparseRule(cdAtom, std::move(y.second)).toLparse(x);
-                cdLit  = make_unique<AuxLiteral>(cdAtom, false);
-                ncdLit = make_unique<AuxLiteral>(cdAtom, true);
+                // the head literals can be pushed directly into djHead
+                dj.addHead(get_clone(elem.heads.front()));
             }
-            if (y.first) {
-                SAuxAtom hdAtom(std::make_shared<AuxAtom>(x.auxAtom()));
-                // y.first :- hdAtom, cdLit.
-                LparseRule(*y.first, make_unique<AuxLiteral>(hdAtom, false), get_clone(cdLit)).toLparse(x);
-                // hdAtom  :- y.first, cdLit.
-                LparseRule(hdAtom, make_unique<PredicateLiteral>(NAF::POS, *y.first), std::move(cdLit)).toLparse(x);
-                // :- hdAtom, not cdLit.
-                LparseRule(make_unique<AuxLiteral>(hdAtom, false), std::move(ncdLit)).toLparse(x);
-                djAuxHead.emplace_back(hdAtom);
+        }
+        else {
+            ULit conjunctionAtom = x.makeAux();
+            ULitVec conjunctionBody;
+            for (auto &head : elem.heads) {
+                if (head.size() == 1) {
+                    LRC().addHead(head.front()).addBody(conjunctionAtom).toLparse(x);
+                    conjunctionBody.emplace_back(get_clone(head.front()));
+                }
+                else {
+                    ULit disjunctionAtom = x.makeAux();
+                    LRC().addHead(get_clone(head)).addBody(disjunctionAtom).toLparse(x);
+                    for (auto &lit : head) {
+                        LRC().addHead(disjunctionAtom).addBody(lit).toLparse(x);
+                    }
+                    conjunctionBody.emplace_back(std::move(disjunctionAtom));
+                }
             }
-            else { body.emplace_back(std::move(ncdLit)); }
+            LRC().addHead(conjunctionAtom).addBody(std::move(conjunctionBody)).toLparse(x);
+            if (cond) {
+                ULit headAtom = x.makeAux();
+                LRC().addHead(headAtom).addBody(conjunctionAtom).addBody(cond).toLparse(x);
+                LRC().addHead(conjunctionAtom).addBody(headAtom).addBody(cond).toLparse(x);
+                LRC().addBody(cond->negateLit(x)).addBody(headAtom).toLparse(x);
+                dj.addHead(std::move(headAtom));
+            }
+            else {
+                dj.addHead(std::move(conjunctionAtom));
+            }
         }
     }
-    LparseRule(std::move(djHead), std::move(djAuxHead), std::move(body), false).toLparse(x);
+    dj.addBody(std::move(body)).toLparse(x);
 }
 void DisjunctionRule::printLparse(LparseOutputter &) const {
     throw std::logic_error("DisjunctionRule::toLparse must be called before DisjunctionRule::printLparse");
 }
-void DisjunctionRule::printElem(std::ostream &out, DisjunctionState::ElemSet::value_type const &x) {
-    if (x.first) { out << x.first->first; }
-    else         { out << "#true"; }
-    if (!x.second.empty()) {
-        out << ":";
-        using namespace std::placeholders;
-        print_comma(out, x.second, ",", std::bind(&Literal::printPlain, _2, _1));
-    }
-}
 void DisjunctionRule::printPlain(std::ostream &out) const {
-    print_comma(out, repr->elems, ";", &DisjunctionRule::printElem);
+    print_comma(out, repr->elems, ";");
     if (!body.empty()) {
         out << ":-";
-        using namespace std::placeholders;
-        print_comma(out, body, ";", std::bind(&Literal::printPlain, _2, _1));
+        printPlainBody(out, body, deref<ULit>());
     }
     out << ".\n";
 }
 bool DisjunctionRule::isIncomplete() const { return true; }
 DisjunctionRule *DisjunctionRule::clone() const { 
-    auto ret(make_unique<DisjunctionRule>());
+    auto ret(gringo_make_unique<DisjunctionRule>());
     ret->repr = repr;
     ret->body = get_clone(body);
     return ret.release();
@@ -724,8 +706,7 @@ void Minimize::toLparse(LparseTranslator &x) {
 void Minimize::printPlain(std::ostream &out) const {
     for (auto &x : elems) {
         out << ":~";
-        using namespace std::placeholders;
-        print_comma(out, x.second, ";", std::bind(&Literal::printPlain, _2, _1));
+        printPlainBody(out, x.second, deref<ULit>());
         out << ".[";
         auto it(x.first.begin());
         out << *it++ << "@";

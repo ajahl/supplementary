@@ -132,13 +132,13 @@ void TestUtility::test_cross_product() {
 void TestUtility::test_clone() {
     typedef std::unique_ptr<CloneMe> U;
     CloneMe x1 { 1 };
-    auto x2(make_unique<CloneMe>(1));
-    auto x3(std::make_pair(make_unique<CloneMe>(1), make_unique<CloneMe>(2)));
+    auto x2(gringo_make_unique<CloneMe>(1));
+    auto x3(std::make_pair(gringo_make_unique<CloneMe>(1), gringo_make_unique<CloneMe>(2)));
     std::vector<U> x4;
-    x4.emplace_back(make_unique<CloneMe>(1));
-    x4.emplace_back(make_unique<CloneMe>(2));
-    x4.emplace_back(make_unique<CloneMe>(3));
-    std::tuple<U, U, U> x5 { make_unique<CloneMe>(1), make_unique<CloneMe>(2), make_unique<CloneMe>(3) };
+    x4.emplace_back(gringo_make_unique<CloneMe>(1));
+    x4.emplace_back(gringo_make_unique<CloneMe>(2));
+    x4.emplace_back(gringo_make_unique<CloneMe>(3));
+    std::tuple<U, U, U> x5 { gringo_make_unique<CloneMe>(1), gringo_make_unique<CloneMe>(2), gringo_make_unique<CloneMe>(3) };
     std::tuple<> x6 { };
     CPPUNIT_ASSERT_EQUAL(to_string(1), to_string(get_clone(1)));
     CPPUNIT_ASSERT_EQUAL(to_string(x1), to_string(U(get_clone(&x1))));
@@ -170,9 +170,9 @@ void TestUtility::test_hash() {
     std::unique_ptr<int> x9e { new int(1) };
     std::unique_ptr<int> x10 { new int(2) };
     std::unique_ptr<int> x10e { new int(2) };
-    std::tuple<std::pair<std::vector<int>, std::unique_ptr<int>>> x11 { std::make_pair(std::vector<int> {1, 2, 3}, make_unique<int>(4)) };
-    std::tuple<std::pair<std::vector<int>, std::unique_ptr<int>>> x11e { std::make_pair(std::vector<int> {1, 2, 3}, make_unique<int>(4)) };
-    std::tuple<std::pair<std::vector<int>, std::unique_ptr<int>>> x12 { std::make_pair(std::vector<int> {1, 2, 4}, make_unique<int>(4)) };
+    std::tuple<std::pair<std::vector<int>, std::unique_ptr<int>>> x11 { std::make_pair(std::vector<int> {1, 2, 3}, gringo_make_unique<int>(4)) };
+    std::tuple<std::pair<std::vector<int>, std::unique_ptr<int>>> x11e { std::make_pair(std::vector<int> {1, 2, 3}, gringo_make_unique<int>(4)) };
+    std::tuple<std::pair<std::vector<int>, std::unique_ptr<int>>> x12 { std::make_pair(std::vector<int> {1, 2, 4}, gringo_make_unique<int>(4)) };
 
 
     CPPUNIT_ASSERT_EQUAL(get_value_hash(1), get_value_hash(1));
@@ -221,9 +221,9 @@ void TestUtility::test_equal_to() {
     std::unique_ptr<int> x9e { new int(1) };
     std::unique_ptr<int> x10 { new int(2) };
     std::unique_ptr<int> x10e { new int(2) };
-    std::tuple<std::pair<std::vector<int>, std::unique_ptr<int>>> x11 { std::make_pair(std::vector<int> {1, 2, 3}, make_unique<int>(4)) };
-    std::tuple<std::pair<std::vector<int>, std::unique_ptr<int>>> x11e { std::make_pair(std::vector<int> {1, 2, 3}, make_unique<int>(4)) };
-    std::tuple<std::pair<std::vector<int>, std::unique_ptr<int>>> x12 { std::make_pair(std::vector<int> {1, 2, 4}, make_unique<int>(4)) };
+    std::tuple<std::pair<std::vector<int>, std::unique_ptr<int>>> x11 { std::make_pair(std::vector<int> {1, 2, 3}, gringo_make_unique<int>(4)) };
+    std::tuple<std::pair<std::vector<int>, std::unique_ptr<int>>> x11e { std::make_pair(std::vector<int> {1, 2, 3}, gringo_make_unique<int>(4)) };
+    std::tuple<std::pair<std::vector<int>, std::unique_ptr<int>>> x12 { std::make_pair(std::vector<int> {1, 2, 4}, gringo_make_unique<int>(4)) };
 
     CPPUNIT_ASSERT(is_value_equal_to(x1, x1e));
     CPPUNIT_ASSERT(is_value_equal_to(x2, x2e));

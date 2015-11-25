@@ -68,6 +68,18 @@ struct IntervalSet {
     using IntervalVec = std::vector<Interval>;
     using const_iterator = typename IntervalVec::const_iterator;
 
+    IntervalSet(std::initializer_list<Interval> list) {
+        for (auto &x : list) { add(x); }
+    }
+    IntervalSet(Interval const &x) { add(x); }
+    IntervalSet(Value const &a, bool ta, Value const &b, bool tb) { add({{a, ta}, {b, tb}}); }
+    IntervalSet(IntervalSet &&) = default;
+    IntervalSet(IntervalSet const &) = default;
+    IntervalSet() = default;
+    IntervalSet &operator=(IntervalSet const &) = default;
+    IntervalSet &operator=(IntervalSet &&) = default;
+    ~IntervalSet() = default;
+
     void add(Interval const &x) {
         if (!x.empty()) {
             auto it = std::lower_bound(vec.begin(), vec.end(), x);
@@ -123,11 +135,52 @@ struct IntervalSet {
         return false;
     }
     bool empty() const { return vec.empty(); }
+    size_t size() const { return vec.size(); }
+    Interval const &front() const { return vec.front(); }
+    Interval const &back() const { return vec.back(); }
     void clear() { return vec.clear(); }
-    void add(Value const &a, bool ta, Value const &b, bool tb) { return add({{a, ta}, {b, tb}}); }
+    void add(Value const &a, bool ta, Value const &b, bool tb) { add({{a, ta}, {b, tb}}); }
     const_iterator begin() const { return vec.begin(); }
     const_iterator end() const { return vec.end(); }
     void remove(Value const &a, bool ta, Value const &b, bool tb) { return remove({{a, ta}, {b, tb}}); }
+
+    IntervalSet intersect(IntervalSet const &set) const {
+        auto it = vec.begin();
+        IntervalSet intersection;
+        for (auto &x : set.vec) {
+            for (; it != vec.end() && it->right < x.left; ++it) { }
+            for (; it != vec.end() && it->right <= x.right; ++it) { 
+                intersection.vec.emplace_back(Interval{std::max(it->left, x.left), it->right});
+            }
+            if (it != vec.end() && it->left < x.right) {
+                intersection.vec.emplace_back(Interval{std::max(it->left, x.left), x.right});
+            }
+        }
+        return intersection;
+    }
+
+    IntervalSet difference(IntervalSet const &set) const {
+        auto it = set.vec.begin();
+        IntervalSet difference;
+        for (auto &x : vec) {
+            Interval current = x;
+            for (; it != set.vec.end() && it->right < current.left; ++it) { }
+            for (; it != set.vec.end() && it->right <= current.right; ++it) { 
+                if (current.left < it->left) {
+                    difference.vec.emplace_back(current);
+                    difference.vec.back().right = it->left;
+                }
+                current.left = it->right;
+            }
+            if (it != set.vec.end() && it->left < current.right) {
+                current.right = it->left;
+            }
+            if (current.left < current.right) {
+                difference.vec.emplace_back(current);
+            }
+        }
+        return difference;
+    }
 
     IntervalVec vec;
 };
@@ -161,9 +214,9 @@ private:
     using interval_vec = std::vector<Interval>;
 
 public:
-    class const_iterator : public std::iterator<std::bidirectional_iterator_tag, value_type const, int> { 
+    class const_iterator : public std::iterator<std::bidirectional_iterator_tag, value_type, int> { 
         friend class enum_interval_set;
-        using iterator = std::iterator<std::bidirectional_iterator_tag, value_type const, int>;
+        using iterator = std::iterator<std::bidirectional_iterator_tag, value_type, int>;
     public:
         const_iterator() = default;
         const_iterator(const_iterator const &x) = default;
@@ -214,7 +267,6 @@ public:
         value_type current;
         typename interval_vec::const_iterator rng;
         interval_vec const                   *set;
-
     };
     
     enum_interval_set()                           = default;

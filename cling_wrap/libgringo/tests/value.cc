@@ -64,24 +64,24 @@ public:
 // {{{ definition of TestValue
 
 void TestValue::setUp() {
-    args = { 42, { "a" } };
+    args = { Value::createNum(42), Value::createId("a") };
     values = {
-        INT_MIN, 
-        INT_MAX, 
-        0, 
-        42, 
+        Value::createNum(INT_MIN), 
+        Value::createNum(INT_MAX), 
+        Value::createNum(0), 
+        Value::createNum(42), 
 
-        "x", 
-        "abc", 
+        Value::createId("x"), 
+        Value::createId("abc"), 
 
-        { "", false }, 
-        { "xyz", false },
+        Value::createStr(""), 
+        Value::createStr("xyz"),
 
-        true,
-        false,
+        Value::createInf(),
+        Value::createSup(),
 
-        { args },
-        { std::string("f"), args }
+        Value::createTuple(args),
+        Value::createFun(std::string("f"), args)
     };
 
 }
@@ -131,29 +131,29 @@ void TestValue::test_values() {
 }
 
 void TestValue::test_cmp_num() {
-    CPPUNIT_ASSERT(!(Value(0) < Value(0)));
-    CPPUNIT_ASSERT( (Value(0) < Value(1)));
-    CPPUNIT_ASSERT(!(Value(1) < Value(0)));
+    CPPUNIT_ASSERT(!(Value::createNum(0) < Value::createNum(0)));
+    CPPUNIT_ASSERT( (Value::createNum(0) < Value::createNum(1)));
+    CPPUNIT_ASSERT(!(Value::createNum(1) < Value::createNum(0)));
 
-    CPPUNIT_ASSERT(!(Value(0) > Value(0)));
-    CPPUNIT_ASSERT(!(Value(0) > Value(1)));
-    CPPUNIT_ASSERT( (Value(1) > Value(0)));
+    CPPUNIT_ASSERT(!(Value::createNum(0) > Value::createNum(0)));
+    CPPUNIT_ASSERT(!(Value::createNum(0) > Value::createNum(1)));
+    CPPUNIT_ASSERT( (Value::createNum(1) > Value::createNum(0)));
 
-    CPPUNIT_ASSERT( (Value(0) <= Value(0)));
-    CPPUNIT_ASSERT( (Value(0) <= Value(1)));
-    CPPUNIT_ASSERT(!(Value(1) <= Value(0)));
+    CPPUNIT_ASSERT( (Value::createNum(0) <= Value::createNum(0)));
+    CPPUNIT_ASSERT( (Value::createNum(0) <= Value::createNum(1)));
+    CPPUNIT_ASSERT(!(Value::createNum(1) <= Value::createNum(0)));
 
-    CPPUNIT_ASSERT( (Value(0) >= Value(0)));
-    CPPUNIT_ASSERT(!(Value(0) >= Value(1)));
-    CPPUNIT_ASSERT( (Value(1) >= Value(0)));
+    CPPUNIT_ASSERT( (Value::createNum(0) >= Value::createNum(0)));
+    CPPUNIT_ASSERT(!(Value::createNum(0) >= Value::createNum(1)));
+    CPPUNIT_ASSERT( (Value::createNum(1) >= Value::createNum(0)));
 
-    CPPUNIT_ASSERT( (Value(0) == Value(0)));
-    CPPUNIT_ASSERT(!(Value(0) == Value(1)));
-    CPPUNIT_ASSERT(!(Value(1) == Value(0)));
+    CPPUNIT_ASSERT( (Value::createNum(0) == Value::createNum(0)));
+    CPPUNIT_ASSERT(!(Value::createNum(0) == Value::createNum(1)));
+    CPPUNIT_ASSERT(!(Value::createNum(1) == Value::createNum(0)));
 
-    CPPUNIT_ASSERT(!(Value(0) != Value(0)));
-    CPPUNIT_ASSERT( (Value(0) != Value(1)));
-    CPPUNIT_ASSERT( (Value(1) != Value(0)));
+    CPPUNIT_ASSERT(!(Value::createNum(0) != Value::createNum(0)));
+    CPPUNIT_ASSERT( (Value::createNum(0) != Value::createNum(1)));
+    CPPUNIT_ASSERT( (Value::createNum(1) != Value::createNum(0)));
 }
 
 void TestValue::test_cmp_type() {
@@ -165,37 +165,44 @@ void TestValue::test_cmp_type() {
 }
 
 void TestValue::test_cmp_other() {
-    CPPUNIT_ASSERT(!(Value("a") < Value("a")));
-    CPPUNIT_ASSERT( (Value("aaa") < Value("aab")));
-    CPPUNIT_ASSERT( (Value("a") < Value("aa")));
-    CPPUNIT_ASSERT(!(Value("aa") < Value("a")));
+    CPPUNIT_ASSERT(!(Value::createId("a") == Value::createId("a").flipSign()));
+    CPPUNIT_ASSERT( (Value::createId("a") != Value::createId("a").flipSign()));
 
-    CPPUNIT_ASSERT(!(Value("a", false) < Value("a", false)));
-    CPPUNIT_ASSERT( (Value("aaa", false) < Value("aab", false)));
-    CPPUNIT_ASSERT( (Value("a", false) < Value("aa", false)));
-    CPPUNIT_ASSERT(!(Value("aa", false) < Value("a", false)));
+    CPPUNIT_ASSERT(!(Value::createId("a") < Value::createId("a")));
+    CPPUNIT_ASSERT( (Value::createId("a") < Value::createId("a").flipSign()));
+    CPPUNIT_ASSERT( (Value::createId("b") < Value::createId("a").flipSign()));
+    CPPUNIT_ASSERT( (Value::createId("aaa") < Value::createId("aab")));
+    CPPUNIT_ASSERT( (Value::createId("a") < Value::createId("aa")));
+    CPPUNIT_ASSERT(!(Value::createId("aa") < Value::createId("a")));
 
-    Value a{ ValVec{ 1, 1 } };
-    Value b{ ValVec{ 1 } };
-    Value c{ ValVec{ 1, 2 } };
-    Value d{ ValVec{ 2 } };
+    CPPUNIT_ASSERT(!(Value::createStr("a") < Value::createStr("a")));
+    CPPUNIT_ASSERT( (Value::createStr("aaa") < Value::createStr("aab")));
+    CPPUNIT_ASSERT( (Value::createStr("a") < Value::createStr("aa")));
+    CPPUNIT_ASSERT(!(Value::createStr("aa") < Value::createStr("a")));
+
+    Value a = Value::createTuple( ValVec{ Value::createNum(1), Value::createNum(1) } );
+    Value b = Value::createTuple( ValVec{ Value::createNum(1) } );
+    Value c = Value::createTuple( ValVec{ Value::createNum(1), Value::createNum(2) } );
+    Value d = Value::createTuple( ValVec{ Value::createNum(2) } );
     CPPUNIT_ASSERT((b < a) && !(a < b));
     CPPUNIT_ASSERT((a < c) && !(c < a));
     CPPUNIT_ASSERT((b < d) && !(d < b));
     CPPUNIT_ASSERT((d < a) && !(a < d));
 
-    Value fa{ "f", ValVec{ 1, 1 } };
-    Value ga{ "g", ValVec{ 1, 1 } };
-    Value fb{ "f", ValVec{ 1 } };
-    Value fc{ "f", ValVec{ 1, 2 } };
-    Value fd{ "f", ValVec{ 2 } };
-    Value gd{ "g", ValVec{ 2 } };
+    Value fa = Value::createFun( "f", ValVec{ Value::createNum(1), Value::createNum(1) } );
+    Value ga = Value::createFun( "g", ValVec{ Value::createNum(1), Value::createNum(1) } );
+    Value fb = Value::createFun( "f", ValVec{ Value::createNum(1) } );
+    Value fc = Value::createFun( "f", ValVec{ Value::createNum(1), Value::createNum(2) } );
+    Value fd = Value::createFun( "f", ValVec{ Value::createNum(2) } );
+    Value gd = Value::createFun( "g", ValVec{ Value::createNum(2) } );
     CPPUNIT_ASSERT((fb < fa) && !(fa < fb));
     CPPUNIT_ASSERT((fa < fc) && !(fc < fa));
     CPPUNIT_ASSERT((fb < fd) && !(fd < fb));
     CPPUNIT_ASSERT((fd < fa) && !(fa < fd));
     CPPUNIT_ASSERT((fa < ga) && !(ga < fa));
     CPPUNIT_ASSERT((gd < fa) && !(fa < gd));
+    CPPUNIT_ASSERT((fa < fa.flipSign()) && !(fa.flipSign() < fa));
+    CPPUNIT_ASSERT((fa < ga.flipSign()) && !(ga.flipSign() < fa));
 }
 
 void TestValue::test_print() {
@@ -210,6 +217,8 @@ void TestValue::test_print() {
     CPPUNIT_ASSERT_EQUAL(std::string("0"), toString(values[2]));
     CPPUNIT_ASSERT_EQUAL(std::string("42"), toString(values[3]));
     CPPUNIT_ASSERT_EQUAL(std::string("x"), toString(values[4]));
+    CPPUNIT_ASSERT_EQUAL(std::string("-x"), toString(values[4].flipSign()));
+    CPPUNIT_ASSERT_EQUAL(std::string("x"), toString(values[4].flipSign().flipSign()));
     CPPUNIT_ASSERT_EQUAL(std::string("abc"), toString(values[5]));
     CPPUNIT_ASSERT_EQUAL(std::string("\"\""), toString(values[6]));
     CPPUNIT_ASSERT_EQUAL(std::string("\"xyz\""), toString(values[7]));
@@ -217,9 +226,11 @@ void TestValue::test_print() {
     CPPUNIT_ASSERT_EQUAL(std::string("#sup"), toString(values[9]));
     CPPUNIT_ASSERT_EQUAL(std::string("(42,a)"), toString(values[10]));
     CPPUNIT_ASSERT_EQUAL(std::string("f(42,a)"), toString(values[11]));
-    CPPUNIT_ASSERT_EQUAL(std::string("()"), toString(Value("", ValVec{})));
+    CPPUNIT_ASSERT_EQUAL(std::string("-f(42,a)"), toString(values[11].flipSign()));
+    CPPUNIT_ASSERT_EQUAL(std::string("f(42,a)"), toString(values[11].flipSign().flipSign()));
+    CPPUNIT_ASSERT_EQUAL(std::string("()"), toString(Value::createTuple(ValVec{})));
 
-    std::string comp = toString(Value(std::string("g"), ValVec(values.begin() + 2, values.end())));
+    std::string comp = toString(Value::createFun(std::string("g"), ValVec(values.begin() + 2, values.end())));
     CPPUNIT_ASSERT_EQUAL(std::string("g(0,42,x,abc,\"\",\"xyz\",#inf,#sup,(42,a),f(42,a))"), comp);
 }
 

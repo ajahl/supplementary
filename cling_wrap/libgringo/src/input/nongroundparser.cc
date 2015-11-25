@@ -18,6 +18,15 @@
 
 // }}}
 
+#ifndef _GNU_SOURCE
+#  define _GNU_SOURCE
+#endif
+#include <cstdlib>
+#ifdef __USE_GNU
+#  include <libgen.h>
+#  include <sys/types.h>
+#  include <sys/stat.h>
+#endif
 #include "gringo/input/nongroundparser.hh"
 #include "gringo/lexerstate.hh"
 #include "gringo/value.hh"
@@ -30,7 +39,111 @@
 #include <vector>
 #include <algorithm>
 
+
 namespace Gringo { namespace Input {
+
+namespace {
+
+struct Free {
+    void operator ()(char *ptr) { free(ptr); }
+};
+
+template <typename T>
+void report_included(T const &loc, std::string const &filename) {
+    GRINGO_REPORT(W_FILE_INCLUDED) << loc << ": warning: already included file:\n"
+        << "  " << filename << "\n";
+}
+
+template <typename T>
+void report_not_found(T const &loc, std::string const &filename) {
+    GRINGO_REPORT(E_ERROR) << loc << ": error: file could not be opened:\n"
+        << "  " << filename << "\n";
+}
+
+// NOTE: is there a better way?
+#ifdef __USE_GNU
+
+std::string check_file(std::string const &filename) {
+    if (filename == "-") { return filename; }
+    struct stat sb;
+    if (stat(filename.c_str(), &sb) != -1) { 
+        if ((sb.st_mode & S_IFMT) == S_IFIFO) { 
+            return filename;
+        }
+        else {
+            std::unique_ptr<char, Free> x(canonicalize_file_name(filename.c_str()));
+            if (x) { return x.get(); }
+        }
+    }
+    return "";
+}
+
+std::pair<std::string, std::string> check_file(std::string const &filename, std::string const &source) {
+    struct stat sb;
+    if (stat(filename.c_str(), &sb) != -1) {
+        if ((sb.st_mode & S_IFMT) == S_IFIFO) {
+            return {filename, filename};
+        }
+        else {
+            std::unique_ptr<char, Free> x(canonicalize_file_name(filename.c_str()));
+            if (x) { return {x.get(), filename}; }
+        }
+    }
+    else if (filename.compare(0, 1, "/", 1) != 0) {
+        std::unique_ptr<char, Free> x(strdup(source.c_str()));
+        std::string path = dirname(x.get());
+        path.push_back('/');
+        path.append(filename);
+        if (stat(path.c_str(), &sb) != -1) { 
+            if ((sb.st_mode & S_IFMT) == S_IFIFO) { 
+                return {path, path};
+            }
+            else {
+                x.reset(canonicalize_file_name(path.c_str()));
+                if (x) { return {x.get(), path}; }
+            }
+        }
+    }
+    return {"", ""};
+}
+
+#else
+
+std::string check_file(std::string const &filename) {
+    if (filename == "-" && std::cin.good()) {
+        return filename; 
+    }
+    if (std::ifstream(filename).good()) {
+        return filename;
+    }
+    return "";
+}
+
+std::pair<std::string, std::string> check_file(std::string const &filename, std::string const &source) {
+    if (std::ifstream(filename).good()) {
+        return {filename, filename};
+    }
+    else {
+#if defined _WIN32 || defined __WIN32__ || defined __EMX__ || defined __DJGPP__
+        const char *SLASH = "\\";
+#else
+        const char *SLASH = "/";
+#endif
+        size_t slash = source.find_last_of(SLASH);
+        if (slash != std::string::npos) {
+            std::string path = source.substr(0, slash + 1);
+            path.append(filename);
+            if (std::ifstream(path).good()) {
+                return {path, path};
+            }
+        }
+    }
+    return {"", ""};
+}
+
+#endif
+
+}
 
 // {{{ defintion of NonGroundParser
 
@@ -40,11 +153,11 @@ NonGroundParser::NonGroundParser(INongroundProgramBuilder &pb)
     , _startSymbol(0) { }
 
 void NonGroundParser::parseError(Location const &loc, std::string const &msg) {
-    GRINGO_REPORT(ERROR) << loc << ": error: " << msg << "\n";
+    GRINGO_REPORT(E_ERROR) << loc << ": error: " << msg << "\n";
 }
 
 void NonGroundParser::lexerError(std::string const &token) {
-    GRINGO_REPORT(ERROR) << filename() << ":" << line() << ":" << column() << ": error: lexer error, unexpected " << token << "\n";
+    GRINGO_REPORT(E_ERROR) << filename() << ":" << line() << ":" << column() << ": error: lexer error, unexpected " << token << "\n";
 }
 
 bool NonGroundParser::push(std::string const &filename, bool include) {
@@ -63,31 +176,27 @@ void NonGroundParser::pop() { LexerState::pop(); }
 FWString NonGroundParser::filename() const { return LexerState::data().first; }
 
 void NonGroundParser::pushFile(std::string &&file) {
-    auto res = filenames_.insert(std::forward<std::string>(file));
-    if (!res.second) {
-        GRINGO_REPORT(W_FILE_INCLUDED) << "<cmd>: warning: already included file:\n"
-            << "  " << *res.first << "\n";
+    auto checked = check_file(file);
+    if (!checked.empty() && !filenames_.insert(checked).second) {
+        report_included("<cmd>", file);
     }
-    if (!push(*res.first)) {
-        GRINGO_REPORT(ERROR) << "<cmd>: error: '" << *res.first << "' file could not be opened\n";
+    else if (checked.empty() || !push(file)) {
+        report_not_found("<cmd>", file);
     }
 }
 
 void NonGroundParser::pushStream(std::string &&file, std::unique_ptr<std::istream> in) {
     auto res = filenames_.insert(std::move(file));
     if (!res.second) {
-        GRINGO_REPORT(W_FILE_INCLUDED) << "<cmd>: warning: already included file:\n"
-            << "  " << *res.first << "\n";
+        report_included("<cmd>", *res.first);
     }
-    if (!push(*res.first, std::move(in))) {
-        GRINGO_REPORT(ERROR) << "<cmd>: error: '" << *res.first << "' file could not be opened\n";
+    else if (!push(*res.first, std::move(in))) {
+        report_not_found("<cmd>", *res.first);
     }
 }
 
-void NonGroundParser::pushBlocks(Gringo::Input::ProgramVec &&blocks) {
-    for (auto &block : blocks) { 
-        LexerState::push(make_unique<std::istringstream>(std::get<2>(block)), {"<block>", {std::get<0>(block), std::get<1>(block)}});
-    }
+void NonGroundParser::pushBlock(std::string const &name, IdVec const &vec, std::string const &block) {
+    LexerState::push(gringo_make_unique<std::istringstream>(block), {"<block>", {name, vec}});
 }
 
 void NonGroundParser::_init() {
@@ -121,9 +230,12 @@ int NonGroundParser::lex(void *pValue, Location &loc) {
 
 void NonGroundParser::include(unsigned sUid, Location const &loc, bool inbuilt) {
     if (inbuilt) {
-        if (sUid == FWString("iclingo").uid()) {
-            push("<iclingo>", make_unique<std::istringstream>(
-R"(
+        if (sUid == FWString("incmode").uid()) {
+            if (incmodeIncluded_) {
+                report_included(loc, "<incmode>");
+            }
+            else {
+                push("<incmode>", gringo_make_unique<std::istringstream>(R"(
 #script (lua) 
 
 function get(val, default)
@@ -135,72 +247,56 @@ function get(val, default)
 end
 
 function main(prg)
-    imin   = get(prg:getConst("imin"), 1)
-    imax   = prg:getConst("imax")
-    istop  = get(prg:getConst("istop"), "SAT")
-    iquery = get(prg:getConst("iquery"), 1)
-    step   = 1
+    local imin   = get(prg:get_const("imin"), 0)
+    local imax   = prg:get_const("imax")
+    local istop  = get(prg:get_const("istop"), "SAT")
 
-    prg:ground("base", {})
-    while true do
-        if imax ~= nil and step > imax then break end
-        prg:ground("cumulative", {step})
-        ret = gringo.SolveResult.UNKNOWN
-        if step >= iquery then
-            if step > iquery then
-                prg:releaseExternal(gringo.Fun("query", {step-1}))
-            end
-            prg:assignExternal(gringo.Fun("query", {step}), true)
-            prg:ground("volatile", {step})
-            ret = prg:solve()
+    local step, ret = 0, gringo.SolveResult.UNKNOWN
+    while (imax == nil or step < imax) and
+          (step == 0   or step < imin or (
+              (istop == "SAT"     and ret ~= gringo.SolveResult.SAT) or
+              (istop == "UNSAT"   and ret ~= gringo.SolveResult.UNSAT) or 
+              (istop == "UNKNOWN" and ret ~= gringo.SolveResult.UNKNOWN))) do
+        local parts = {}
+        table.insert(parts, {"check", {step}})
+        if step > 0 then
+            prg:release_external(gringo.Fun("query", {step-1}))
+            prg:cleanup_domains()
+            table.insert(parts, {"step", {step}})
+        else
+            table.insert(parts, {"base", {}})
         end
-        if step >= imin and ((istop == "SAT" and ret == gringo.SolveResult.SAT) or (istop == "UNSAT" and ret == gringo.SolveResult.UNSAT)) then
-            break
-        end
-        step = step+1
+        prg:ground(parts)
+        prg:assign_external(gringo.Fun("query", {step}), true)
+        ret, step = prg:solve(), step+1
     end
 end
+
 #end.
-)"
-            ));
+
+#program check(t).
+#external query(t).
+)"));
+                incmodeIncluded_ = true;
+            }
         }
         else {
-            GRINGO_REPORT(ERROR) << loc << ": error: '" << *FWString(sUid) << "' file could not be opened\n";
+            report_not_found(loc, "<" + *FWString(sUid) + ">");
         }
     }
     else {
-        auto res = filenames_.insert(*FWString(sUid));
-        if (!res.second) {
-            GRINGO_REPORT(W_FILE_INCLUDED) << loc << ": warning: already included file:\n"
-                << "  " << *res.first << "\n";
+        auto paths = check_file(*FWString(sUid), *loc.beginFilename);
+        if (!paths.first.empty() && !filenames_.insert(paths.first).second) {
+            report_included(loc, *FWString(sUid));
         }
-        if (!push(*res.first, true)) {
-#if defined _WIN32 || defined __WIN32__ || defined __EMX__ || defined __DJGPP__
-            const char *SLASH = "\\";
-#else
-            const char *SLASH = "/";
-#endif
-            size_t slash = (*loc.beginFilename).find_last_of(SLASH);
-            if (slash != std::string::npos) {
-                std::string path = (*loc.beginFilename).substr(0, slash + 1);
-                auto res2 = filenames_.insert(path + *res.first);
-                if (!res2.second) {
-                    GRINGO_REPORT(W_FILE_INCLUDED) << loc << ": warning: already included file:\n"
-                        << "  " << *res2.first << "\n";
-                }
-                if (!push(*res2.first, true)) {
-                    GRINGO_REPORT(ERROR) << loc << ": error: '" << *res2.first << "' file could not be opened\n";
-                }
-            }
-            else {
-                GRINGO_REPORT(ERROR) << loc << ": error: '" << *res.first << "' file could not be opened\n";
-            }
+        else if (paths.first.empty() || !push(paths.second, true)) {
+            report_not_found(loc, *FWString(sUid));
         }
     }
 }
 
 bool NonGroundParser::parseDefine(std::string const &define) {
-    pushStream("<" + define + ">", make_unique<std::stringstream>(define));
+    pushStream("<" + define + ">", gringo_make_unique<std::stringstream>(define));
     _startSymbol = NonGroundGrammar::parser::token::PARSE_DEF;
     NonGroundGrammar::parser parser(this);
     auto ret = parser.parse();
@@ -209,6 +305,7 @@ bool NonGroundParser::parseDefine(std::string const &define) {
 }
 
 bool NonGroundParser::parse() {
+    if (empty()) { return true; }
     _startSymbol = NonGroundGrammar::parser::token::PARSE_LP;
     NonGroundGrammar::parser parser(this);
     _init();

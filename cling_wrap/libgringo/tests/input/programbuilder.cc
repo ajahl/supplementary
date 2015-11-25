@@ -24,11 +24,15 @@
 #include "gringo/scripts.hh"
 
 #include "tests/tests.hh"
+#include "tests/term_helper.hh"
+#include "tests/gringo_module.hh"
 
 #include <climits>
 #include <sstream>
 
 namespace Gringo { namespace Input { namespace Test {
+
+using namespace Gringo::Test;
 
 // {{{ declaration of TestProgramBuilder
 
@@ -92,6 +96,7 @@ using namespace Gringo::IO;
 TestProgramBuilder::TestProgramBuilder()
     : out({}, oss)
     , l(FWString("dummy"), 1, 1, FWString("dummy"), 1, 1)
+    , scripts(Gringo::Test::getTestModule())
     , p(scripts, prg, out, defs) { }
 
 void TestProgramBuilder::setUp() {
@@ -119,7 +124,7 @@ LitVecUid TestProgramBuilder::litvec(Lits names) {
 
 TermVecUid TestProgramBuilder::termvec(Terms terms) {
     TermVecUid vec = p.termvec();
-    for (auto &x : terms) { vec = p.termvec(vec, p.term(l, Value(x))); }
+    for (auto &x : terms) { vec = p.termvec(vec, p.term(l, NUM(x))); }
     return vec;
 }
 
@@ -143,7 +148,7 @@ BdAggrElemVecUid TestProgramBuilder::bdaggrelemvec(BodyAggrElems elems) {
 
 BoundVecUid TestProgramBuilder::boundvec(Bounds bounds) {
     BoundVecUid vec = p.boundvec();
-    for (auto &x : bounds) { vec = p.boundvec(vec, x.first, p.term(l, Value(x.second))); }
+    for (auto &x : bounds) { vec = p.boundvec(vec, x.first, p.term(l, NUM(x.second))); }
     return vec;
 }
 
@@ -173,16 +178,23 @@ void TestProgramBuilder::test_term() {
         if (!s.empty()) { s.pop_back(); }
         return s;
     };
-    CPPUNIT_ASSERT_EQUAL(std::string("p(1)."), t(p.term(l, Value(1))));
+    CPPUNIT_ASSERT_EQUAL(std::string("p(1)."), t(p.term(l, NUM(1))));
     CPPUNIT_ASSERT_EQUAL(std::string("p(X)."), t(p.term(l, FWString("X"))));
     CPPUNIT_ASSERT_EQUAL(std::string("p(_)."), t(p.term(l, FWString("_"))));
-    CPPUNIT_ASSERT_EQUAL(std::string("p(|1|)."), t(p.term(l, UnOp::ABS, p.term(l, Value(1)))));
-    CPPUNIT_ASSERT_EQUAL(std::string("p(|1|;|2|;|3|)."), t(p.term(l, UnOp::ABS, p.termvec(p.termvec(p.termvec(p.termvec(), p.term(l, Value(1))), p.term(l, Value(2))), p.term(l, Value(3))))));
-    CPPUNIT_ASSERT_EQUAL(std::string("p((1+2))."), t(p.term(l, BinOp::ADD, p.term(l, Value(1)), p.term(l, Value(2)))));
-    CPPUNIT_ASSERT_EQUAL(std::string("p((1..2))."), t(p.term(l, p.term(l, Value(1)), p.term(l, Value(2)))));
-    CPPUNIT_ASSERT_EQUAL(std::string("p(f(1);f(2,3,4))."), t(p.term(l, FWString("f"), p.termvecvec(p.termvecvec(p.termvecvec(), p.termvec(p.termvec(), p.term(l, Value(1)))), p.termvec(p.termvec(p.termvec(p.termvec(), p.term(l, Value(2))), p.term(l, Value(3))), p.term(l, Value(4)))), false)));
-    CPPUNIT_ASSERT_EQUAL(std::string("p(@f(1);@f(2,3,4))."), t(p.term(l, FWString("f"), p.termvecvec(p.termvecvec(p.termvecvec(), p.termvec(p.termvec(), p.term(l, Value(1)))), p.termvec(p.termvec(p.termvec(p.termvec(), p.term(l, Value(2))), p.term(l, Value(3))), p.term(l, Value(4)))), true)));
-    CPPUNIT_ASSERT_EQUAL(std::string("p(1;(2,3,4))."), t(p.term(l, FWString(""), p.termvecvec(p.termvecvec(p.termvecvec(), p.termvec(p.termvec(), p.term(l, Value(1)))), p.termvec(p.termvec(p.termvec(p.termvec(), p.term(l, Value(2))), p.term(l, Value(3))), p.term(l, Value(4)))), false)));
+    CPPUNIT_ASSERT_EQUAL(std::string("p(|1|)."), t(p.term(l, UnOp::ABS, p.term(l, NUM(1)))));
+    CPPUNIT_ASSERT_EQUAL(std::string("p(|1|;|2|;|3|)."), t(p.term(l, UnOp::ABS, p.termvec(p.termvec(p.termvec(p.termvec(), p.term(l, NUM(1))), p.term(l, NUM(2))), p.term(l, NUM(3))))));
+    CPPUNIT_ASSERT_EQUAL(std::string("p((1+2))."), t(p.term(l, BinOp::ADD, p.term(l, NUM(1)), p.term(l, NUM(2)))));
+    CPPUNIT_ASSERT_EQUAL(std::string("p((1..2))."), t(p.term(l, p.term(l, NUM(1)), p.term(l, NUM(2)))));
+    CPPUNIT_ASSERT_EQUAL(std::string("p(f(1);f(2,3,4))."), t(p.term(l, FWString("f"), p.termvecvec(p.termvecvec(p.termvecvec(), p.termvec(p.termvec(), p.term(l, NUM(1)))), p.termvec(p.termvec(p.termvec(p.termvec(), p.term(l, NUM(2))), p.term(l, NUM(3))), p.term(l, NUM(4)))), false)));
+    CPPUNIT_ASSERT_EQUAL(std::string("p(@f(1);@f(2,3,4))."), t(p.term(l, FWString("f"), p.termvecvec(p.termvecvec(p.termvecvec(), p.termvec(p.termvec(), p.term(l, NUM(1)))), p.termvec(p.termvec(p.termvec(p.termvec(), p.term(l, NUM(2))), p.term(l, NUM(3))), p.term(l, NUM(4)))), true)));
+    CPPUNIT_ASSERT_EQUAL(std::string("p(1;(2,3,4))."), t(p.pool(l,p.termvec(p.termvec(p.termvec(),p.term(l, p.termvec(p.termvec(), p.term(l, NUM(1))), false)), p.term(l, p.termvec(p.termvec(p.termvec(p.termvec(), p.term(l, NUM(2))), p.term(l, NUM(3))), p.term(l, NUM(4))), false)))));
+    CPPUNIT_ASSERT_EQUAL(std::string("p((1,);(2,3,4))."), t(
+        p.pool(l, 
+            p.termvec(
+                p.termvec(
+                    p.termvec(),
+                    p.term(l, p.termvec(p.termvec(), p.term(l, NUM(1))), true)),
+                p.term(l, p.termvec(p.termvec(p.termvec(p.termvec(), p.term(l, NUM(2))), p.term(l, NUM(3))), p.term(l, NUM(4))), false)))));
 }
 
 void TestProgramBuilder::test_literal() {
@@ -193,14 +205,14 @@ void TestProgramBuilder::test_literal() {
         if (!s.empty()) { s.pop_back(); }
         return s;
     };
-    CPPUNIT_ASSERT_EQUAL(std::string("0==0."), t(p.boollit(l, true)));
+    CPPUNIT_ASSERT_EQUAL(std::string("0=0."), t(p.boollit(l, true)));
     CPPUNIT_ASSERT_EQUAL(std::string("0!=0."), t(p.boollit(l, false)));
     CPPUNIT_ASSERT_EQUAL(std::string("p."), t(p.predlit(l, NAF::POS, false, "p", p.termvecvec(p.termvecvec(), p.termvec()))));
-    CPPUNIT_ASSERT_EQUAL(std::string("-p."), t(p.predlit(l, NAF::POS, true, "p", p.termvecvec(p.termvecvec(), p.termvec()))));
+    CPPUNIT_ASSERT_EQUAL(std::string("(-p)."), t(p.predlit(l, NAF::POS, true, "p", p.termvecvec(p.termvecvec(), p.termvec()))));
     CPPUNIT_ASSERT_EQUAL(std::string("not p."), t(p.predlit(l, NAF::NOT, false, "p", p.termvecvec(p.termvecvec(), p.termvec()))));
     CPPUNIT_ASSERT_EQUAL(std::string("not not p."), t(p.predlit(l, NAF::NOTNOT, false, "p", p.termvecvec(p.termvecvec(), p.termvec()))));
-    CPPUNIT_ASSERT_EQUAL(std::string("1<2."), t(p.rellit(l, Relation::LT, p.term(l, Value(1)), p.term(l, Value(2)))));
-    CPPUNIT_ASSERT_EQUAL(std::string("1>2."), t(p.rellit(l, Relation::GT, p.term(l, Value(1)), p.term(l, Value(2)))));
+    CPPUNIT_ASSERT_EQUAL(std::string("1<2."), t(p.rellit(l, Relation::LT, p.term(l, NUM(1)), p.term(l, NUM(2)))));
+    CPPUNIT_ASSERT_EQUAL(std::string("1>2."), t(p.rellit(l, Relation::GT, p.term(l, NUM(1)), p.term(l, NUM(2)))));
 }
 
 void TestProgramBuilder::test_bdaggr() {
@@ -271,10 +283,10 @@ void TestProgramBuilder::test_hdaggr() {
     CPPUNIT_ASSERT_EQUAL(std::string("#sum{p:q,r}."), t(headaggr(AggregateFunction::SUM, {}, CondLits({ {"p",{"q","r"}} }))));
     CPPUNIT_ASSERT_EQUAL(std::string("#sum{p:;q:}."), t(headaggr(AggregateFunction::SUM, {}, CondLits({ {"p",{}},{"q",{}} }))));
     // Disjunction
-    CPPUNIT_ASSERT_EQUAL(std::string("p:."), t(p.disjunction(l, condlitvec({ {"p",{}} }))));
-    CPPUNIT_ASSERT_EQUAL(std::string("p:q."), t(p.disjunction(l, condlitvec({ {"p", {"q"}} }))));
-    CPPUNIT_ASSERT_EQUAL(std::string("p:q,r."), t(p.disjunction(l, condlitvec({ {"p",{"q","r"}} }))));
-    CPPUNIT_ASSERT_EQUAL(std::string("p:;q:."), t(p.disjunction(l, condlitvec({ {"p",{}}, {"q",{}} }))));
+    CPPUNIT_ASSERT_EQUAL(std::string("p::."), t(p.disjunction(l, condlitvec({ {"p",{}} }))));
+    CPPUNIT_ASSERT_EQUAL(std::string("p::q."), t(p.disjunction(l, condlitvec({ {"p", {"q"}} }))));
+    CPPUNIT_ASSERT_EQUAL(std::string("p::q,r."), t(p.disjunction(l, condlitvec({ {"p",{"q","r"}} }))));
+    CPPUNIT_ASSERT_EQUAL(std::string("p::;q::."), t(p.disjunction(l, condlitvec({ {"p",{}}, {"q",{}} }))));
 }
 
 void TestProgramBuilder::test_rule() {

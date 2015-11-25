@@ -36,12 +36,18 @@ struct RangeBinder : Binder {
         , range(range) { }
     virtual IndexUpdater *getUpdater() { return nullptr; }
     virtual void match() {
-        Value l{range.first->eval()}, r{range.second->eval()};
-        if (l.type() == Value::NUM && r.type() == Value::NUM) {
+        bool undefined = false;
+        Value l{range.first->eval(undefined)}, r{range.second->eval(undefined)};
+        if (!undefined && l.type() == Value::NUM && r.type() == Value::NUM) {
             current = l.num();
             end     = r.num();
         }
         else {
+            if (!undefined) {
+                GRINGO_REPORT(W_OPERATION_UNDEFINED) 
+                    << (range.first->loc() + range.second->loc()) << ": info: interval undefined:\n"
+                    << "  " << *range.first << ".." << *range.second << "\n";
+            }
             current = 1;
             end     = 0;
         }
@@ -49,7 +55,7 @@ struct RangeBinder : Binder {
     virtual bool next() {
         // Note: if assign does not match it is not a variable and will not match at all
         //       if assign is just a number, then this is handled in the corresponding Binder
-        return current <= end && assign->match(Value(current++));
+        return current <= end && assign->match(Value::createNum(current++));
     }
     virtual void start()  { }
     virtual void finish() { }
@@ -72,12 +78,19 @@ struct RangeMatcher : Binder {
         , range(range) { }
     virtual IndexUpdater *getUpdater() { return nullptr; }
     virtual void match() {
-        Value l{range.first->eval()}, r{range.second->eval()}, a{assign.eval()};
-        firstMatch = 
-            l.type() == Value::NUM && 
-            r.type() == Value::NUM && 
-            a.type() == Value::NUM &&
-            l.num() <= a.num() && a.num() <= r.num();
+        bool undefined = false;
+        Value l{range.first->eval(undefined)}, r{range.second->eval(undefined)}, a{assign.eval(undefined)};
+        if (!undefined && l.type() == Value::NUM && r.type() == Value::NUM) {
+            firstMatch = a.type() == Value::NUM && l.num() <= a.num() && a.num() <= r.num();
+        }
+        else { 
+            if (!undefined) {
+                GRINGO_REPORT(W_OPERATION_UNDEFINED) 
+                    << (range.first->loc() + range.second->loc()) << ": info: interval undefined:\n"
+                    << "  " << *range.first << ".." << *range.second << "\n";
+            }
+            firstMatch = false;
+        }
     }
     virtual bool next() {
         bool m = firstMatch;
@@ -104,8 +117,12 @@ struct ScriptBinder : Binder {
     virtual IndexUpdater *getUpdater() { return nullptr; }
     virtual void match() {
         ValVec args;
-        for (auto &x : std::get<1>(shared)) { args.emplace_back(x->eval()); }
-        matches = scripts.call(assign->loc(), *std::get<0>(shared), args);
+        bool undefined = false;
+        for (auto &x : std::get<1>(shared)) { args.emplace_back(x->eval(undefined)); }
+        if (!undefined) {
+            matches = scripts.call(assign->loc(), *std::get<0>(shared), args);
+        }
+        else { matches = {}; }
         current = matches.begin();
     }
     virtual bool next() {
@@ -139,17 +156,20 @@ struct RelationMatcher : Binder {
         : shared(shared) { }
     virtual IndexUpdater *getUpdater() { return nullptr; }
     virtual void match() {
-        Value l(std::get<1>(shared)->eval());
-        Value r(std::get<2>(shared)->eval());
-        switch (std::get<0>(shared)) {
-            case Relation::GT:     { firstMatch = l >  r; break; }
-            case Relation::LT:     { firstMatch = l <  r; break; }
-            case Relation::GEQ:    { firstMatch = l >= r; break; }
-            case Relation::LEQ:    { firstMatch = l <= r; break; }
-            case Relation::NEQ:    { firstMatch = l != r; break; }
-            case Relation::ASSIGN:
-            case Relation::EQ:     { firstMatch = l == r; break; }
+        bool undefined = false;
+        Value l(std::get<1>(shared)->eval(undefined));
+        Value r(std::get<2>(shared)->eval(undefined));
+        if (!undefined) {
+            switch (std::get<0>(shared)) {
+                case Relation::GT:  { firstMatch = l >  r; break; }
+                case Relation::LT:  { firstMatch = l <  r; break; }
+                case Relation::GEQ: { firstMatch = l >= r; break; }
+                case Relation::LEQ: { firstMatch = l <= r; break; }
+                case Relation::NEQ: { firstMatch = l != r; break; }
+                case Relation::EQ:  { firstMatch = l == r; break; }
+            }
         }
+        else { firstMatch = false; }
     }
     virtual bool next() { 
         bool ret = firstMatch;
@@ -173,7 +193,14 @@ struct AssignBinder : Binder {
         : lhs(std::move(lhs))
         , rhs(rhs) { }
     virtual IndexUpdater *getUpdater() { return nullptr; }
-    virtual void match()               { firstMatch = lhs->match(rhs.eval()); }
+    virtual void match() { 
+        bool undefined = false;
+        Value valRhs = rhs.eval(undefined);
+        if (!undefined) {
+            firstMatch = lhs->match(valRhs);
+        }
+        else { firstMatch = false; }
+    }
     virtual bool next() {
         bool ret = firstMatch;
         firstMatch = false;
@@ -196,7 +223,9 @@ struct CSPLiteralMatcher : Binder {
     CSPLiteralMatcher(CSPLiteralShared &terms)
         : terms(terms) { }
     virtual IndexUpdater *getUpdater() { return nullptr; }
-    virtual void match() { firstMatch = true; }
+    virtual void match() { 
+        firstMatch = std::get<1>(terms).checkEval() && std::get<2>(terms).checkEval();
+    }
     virtual bool next() { 
         bool ret = firstMatch;
         firstMatch = false;
@@ -223,23 +252,22 @@ bool PredicateLiteral::isNegative() const         { return gLit.naf != NAF::POS;
 void PredicateLiteral::setType(OccurrenceType x)  { type = x; }
 OccurrenceType PredicateLiteral::getType() const  { return type; }
 BodyOcc::DefinedBy &PredicateLiteral::definedBy() { return defs; }
-void PredicateLiteral::checkDefined(LocSet &done, SigSet const &edb) const { 
+void PredicateLiteral::checkDefined(LocSet &done, SigSet const &edb, UndefVec &undef) const { 
     if (defs.empty() && done.find(repr->loc()) == done.end() && edb.find(repr->getSig()) == edb.end()) {
+        // accumulate warnings in array of printables ..
         done.insert(repr->loc());
-        GRINGO_REPORT(W_ATOM_UNDEFINED)
-            << repr->loc() << ": warning: atom is undefined:\n"
-            << "  " << *this << "\n";
+        undef.emplace_back(repr->loc(), this);
     }
 }
 
 ExternalBodyOcc::ExternalBodyOcc()               { }
-UGTerm ExternalBodyOcc::getRepr() const          { return make_unique<GValTerm>("#external"); }
+UGTerm ExternalBodyOcc::getRepr() const          { return gringo_make_unique<GValTerm>(Value::createId("#external")); }
 bool ExternalBodyOcc::isPositive() const         { return false; }
 bool ExternalBodyOcc::isNegative() const         { return false; }
 void ExternalBodyOcc::setType(OccurrenceType)    { }
 OccurrenceType ExternalBodyOcc::getType() const  { return OccurrenceType::STRATIFIED; }
 BodyOcc::DefinedBy &ExternalBodyOcc::definedBy() { return defs; }
-void ExternalBodyOcc::checkDefined(LocSet &, SigSet const &) const { }
+void ExternalBodyOcc::checkDefined(LocSet &, SigSet const &, UndefVec &) const { }
 ExternalBodyOcc::~ExternalBodyOcc()              { }
 
 // }}}
@@ -261,8 +289,8 @@ PredicateLiteral::PredicateLiteral(PredicateDomain &domain, NAF naf, UTerm &&rep
     : repr(std::move(repr))
     , domain(domain) { gLit.naf = naf; }
 
-ProjectionLiteral::ProjectionLiteral(PredicateDomain &domain, UTerm &&repr)
-    : PredicateLiteral(domain, NAF::POS, std::move(repr)) { }
+ProjectionLiteral::ProjectionLiteral(PredicateDomain &domain, UTerm &&repr, bool initialized)
+    : PredicateLiteral(domain, NAF::POS, std::move(repr)), initialized_(initialized) { }
 
 CSPLiteral::CSPLiteral(Relation rel, CSPAddTerm &&left, CSPAddTerm &&right)
     : terms(rel, std::move(left), std::move(right)) { }
@@ -318,7 +346,7 @@ void ScriptLiteral::collect(VarTermBoundVec &vars) const {
     for (auto &x : std::get<1>(shared)) { x->collect(vars, false); }
 }
 void RelationLiteral::collect(VarTermBoundVec &vars) const { 
-    std::get<1>(shared)->collect(vars, std::get<0>(shared) == Relation::ASSIGN);
+    std::get<1>(shared)->collect(vars, std::get<0>(shared) == Relation::EQ);
     std::get<2>(shared)->collect(vars, false);
 }
 void PredicateLiteral::collect(VarTermBoundVec &vars) const { repr->collect(vars, gLit.naf == NAF::POS); }
@@ -349,21 +377,21 @@ void CSPLiteral::collectImportant(Term::VarSet &vars) {
 // {{{ definition of *Literal::index
 
 UIdx RangeLiteral::index(Scripts &, BinderType, Term::VarSet &bound) {
-    if (assign->bind(bound)) { return make_unique<RangeBinder>(get_clone(assign), range); }
-    else                     { return make_unique<RangeMatcher>(*assign, range); }
+    if (assign->bind(bound)) { return gringo_make_unique<RangeBinder>(get_clone(assign), range); }
+    else                     { return gringo_make_unique<RangeMatcher>(*assign, range); }
 }
 UIdx ScriptLiteral::index(Scripts &scripts, BinderType, Term::VarSet &bound) {
     UTerm clone(assign->clone());
     clone->bind(bound);
-    return make_unique<ScriptBinder>(scripts, std::move(clone), shared);
+    return gringo_make_unique<ScriptBinder>(scripts, std::move(clone), shared);
 }
 UIdx RelationLiteral::index(Scripts &, BinderType, Term::VarSet &bound) {
-    if (std::get<0>(shared) == Relation::ASSIGN) {
+    if (std::get<0>(shared) == Relation::EQ) {
         UTerm clone(std::get<1>(shared)->clone());
         VarTermVec occBound;
-        if (clone->bind(bound)) { return make_unique<AssignBinder>(std::move(clone), *std::get<2>(shared)); }
+        if (clone->bind(bound)) { return gringo_make_unique<AssignBinder>(std::move(clone), *std::get<2>(shared)); }
     }
-    return make_unique<RelationMatcher>(shared);
+    return gringo_make_unique<RelationMatcher>(shared);
 }
 UIdx PredicateLiteral::index(Scripts &, BinderType type, Term::VarSet &bound) {
     return make_binder(domain, gLit.naf, *repr, gLit.repr, type, isRecursive(), bound, 0);
@@ -371,10 +399,10 @@ UIdx PredicateLiteral::index(Scripts &, BinderType type, Term::VarSet &bound) {
 UIdx ProjectionLiteral::index(Scripts &, BinderType type, Term::VarSet &bound) {
     assert(bound.empty());
     assert(type == BinderType::ALL || type == BinderType::NEW);
-    return make_binder(domain, gLit.naf, *repr, gLit.repr, type, isRecursive(), bound, domain.exports.incOffset);
+    return make_binder(domain, gLit.naf, *repr, gLit.repr, type, isRecursive(), bound, initialized_ ? domain.exports.incOffset : 0);
 }
 UIdx CSPLiteral::index(Scripts &, BinderType, Term::VarSet &) {
-    return make_unique<CSPLiteralMatcher>(terms);
+    return gringo_make_unique<CSPLiteralMatcher>(terms);
 }
 
 // }}}
@@ -382,8 +410,9 @@ UIdx CSPLiteral::index(Scripts &, BinderType, Term::VarSet &) {
 
 Literal::Score RangeLiteral::score(Term::VarSet const &) { 
     if (range.first->getInvertibility() == Term::CONSTANT && range.second->getInvertibility() == Term::CONSTANT) {
-        Value l(range.first->eval());
-        Value r(range.second->eval());
+        bool undefined = false;
+        Value l(range.first->eval(undefined));
+        Value r(range.second->eval(undefined));
         return (l.type() == Value::NUM && r.type() == Value::NUM) ? r.num() - l.num() : -1;
     }
     return 0;

@@ -26,8 +26,20 @@
 
 namespace Gringo {
 
+template <class T>
+struct ScopeExit {
+    ScopeExit(T &&exit) : exit(std::forward<T>(exit)) { }
+    ~ScopeExit() { exit(); }
+    T exit;
+};
+
+template <typename T>
+ScopeExit<T> onExit(T &&exit) {
+    return ScopeExit<T>(std::forward<T>(exit));
+}
+
 struct Scripts {
-    Scripts();
+    Scripts(GringoModule &module);
     bool pyExec(Location const &loc, FWString code);
     bool luaExec(Location const &loc, FWString code);
     bool callable(FWString name);
@@ -35,6 +47,7 @@ struct Scripts {
     void main(Control &ctl);
     ~Scripts();
 
+    Any context;
     Python py;
     Lua lua;
 };

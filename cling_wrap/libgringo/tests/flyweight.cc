@@ -28,25 +28,11 @@
 
 namespace Gringo { namespace Test {
 
-// {{{ declaration of StringCoder
-
-struct StringCoder {
-    typedef std::string value_type;
-    typedef std::string return_type;
-    static bool encoded(unsigned uid);
-    static bool encodeVal(std::string const &val, unsigned &uid);
-    static unsigned encodeUid(unsigned uid);
-    static std::string decodeVal(unsigned uid);
-    static unsigned decodeUid(unsigned uid);
-};
-
-// }}}
 // {{{ declaration of TestFlyweight
 
 class TestFlyweight : public CppUnit::TestFixture {
     CPPUNIT_TEST_SUITE(TestFlyweight);
         CPPUNIT_TEST(test_uid);
-        CPPUNIT_TEST(test_uid_value);
         CPPUNIT_TEST(test_erase_uid);
         CPPUNIT_TEST(test_offset);
         CPPUNIT_TEST(test_erase_offset);
@@ -56,7 +42,6 @@ public:
     struct Dummy;
 
     typedef Flyweight<Dummy> FWDummy;
-    typedef Flyweight<std::string, StringCoder> FWString;
     typedef FlyweightVec<std::string> FWStringVec;
 
     virtual void setUp();
@@ -103,37 +88,6 @@ struct hash<Gringo::Test::TestFlyweight::Dummy> {
 
 namespace Gringo { namespace Test {
 
-// {{{ defintion of StringCoder
-
-bool StringCoder::encoded(unsigned uid) {
-    return uid & 1;
-}
-
-bool StringCoder::encodeVal(std::string const &val, unsigned &uid)
-{
-    if (val.length() == 1) {
-        uid = (unsigned (val[0]) << 1u) | 1u;
-        return true;
-    }
-    return false;
-}
-
-unsigned StringCoder::encodeUid(unsigned uid)
-{
-    return uid << 1u;
-}
-
-std::string StringCoder::decodeVal(unsigned uid) {
-    std::string s;
-    s.push_back(char(uid >> 1u));
-    return s;
-}
-
-unsigned StringCoder::decodeUid(unsigned uid) {
-    return uid >> 1u;
-}
-
-// }}}
 // {{{ defintion of TestFlyweight::Dummy
 
 TestFlyweight::Dummy::Dummy(std::string const &name)
@@ -158,7 +112,6 @@ void TestFlyweight::setUp() { }
 
 void TestFlyweight::tearDown() {
     FWDummy::clear();
-    FWString::clear();
     FWStringVec::clear();
 }
 
@@ -177,25 +130,6 @@ void TestFlyweight::test_uid() {
     CPPUNIT_ASSERT_EQUAL(std::string("a"), (*a).name);
     CPPUNIT_ASSERT_EQUAL(std::string("a"), (*aa).name);
     CPPUNIT_ASSERT_EQUAL(std::string("b"), (*b).name);
-}
-
-void TestFlyweight::test_uid_value() {
-    FWString::clear();
-
-    FWString a("aa");
-    FWString aa("aa");
-    FWString b("bb");
-    FWString c("c");
-
-    CPPUNIT_ASSERT_EQUAL(0u, a.uid());
-    CPPUNIT_ASSERT_EQUAL(2u, b.uid());
-    CPPUNIT_ASSERT_EQUAL((unsigned('c') << 1u) | 1u, c.uid());
-    CPPUNIT_ASSERT_EQUAL(a.uid(), aa.uid());
-    CPPUNIT_ASSERT(a.uid() != b.uid());
-
-    CPPUNIT_ASSERT_EQUAL(std::string("aa"), *a);
-    CPPUNIT_ASSERT_EQUAL(std::string("aa"), *aa);
-    CPPUNIT_ASSERT_EQUAL(std::string("bb"), *b);
 }
 
 void TestFlyweight::test_erase_uid() {

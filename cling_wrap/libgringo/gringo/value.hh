@@ -37,10 +37,12 @@
 
 namespace Gringo {
 
+enum class TruthValue { True, False, Open, Free };
+
 struct Value;
-using ValVec    = std::vector<Value>;
-using FWValVec  = FlyweightVec<Value>;
-using FWString  = Flyweight<std::string>;
+using ValVec   = std::vector<Value>;
+using FWValVec = FlyweightVec<Value>;
+using FWString = Flyweight<std::string>;
 using IdValMap = std::unordered_map<FWString, Value>;
 
 inline std::ostream &operator<<(std::ostream &out, FWString const &x) {
@@ -56,13 +58,16 @@ std::string unquote(std::string const &str);
 // }}}
 // {{{ declaration of Signature
 
+struct FWSignature;
 struct Signature {
-    struct Coder;
+    friend struct FWSignature;
 
-    Signature(FWString name, unsigned length);
+    Signature(FWString name, unsigned length, bool sign = false);
 
     FWString name() const;
     unsigned length() const;
+    bool sign() const;
+    Signature flipSign() const;
 
     template <bool enc>
     bool encode(unsigned &uid) const;
@@ -78,21 +83,32 @@ private:
 };
 
 inline std::ostream &operator<<(std::ostream &out, Signature const &x) {
+    if (x.sign()) { out << "-"; }
     out << *x.name() << "/" << x.length();
     return out;
 }
 
-struct Signature::Coder {
-    typedef Signature value_type;
-    typedef Signature return_type;
-    static bool encoded(unsigned uid);
-    static bool encodeVal(Signature const &val, unsigned &uid);
-    static unsigned encodeUid(unsigned uid);
-    static Signature decodeVal(unsigned uid);
-    static unsigned decodeUid(unsigned uid);
-};
+// }}}
+// {{{ declaration of FWSignature
 
-typedef Flyweight<Signature, Signature::Coder> FWSignature;
+struct FWSignature {
+    using FWSig = Flyweight<Signature>;
+
+    template<typename... Args>
+    FWSignature(Args... args);
+    FWSignature(unsigned repr);
+    unsigned uid() const;
+    Signature operator*() const;
+
+    bool operator==(FWSignature const &other) const;
+    bool operator!=(FWSignature const &other) const;
+    bool operator<(FWSignature const &other) const;
+    bool operator>(FWSignature const &other) const;
+    bool operator<=(FWSignature const &other) const;
+    bool operator>=(FWSignature const &other) const;
+    
+    unsigned repr;
+};
 
 inline std::ostream &operator<<(std::ostream &out, FWSignature const &x) {
     out << *x;
@@ -107,27 +123,28 @@ struct Value {
     struct POD;
 
     // construction
-    Value(const char *val, bool id = true);
-    Value(std::string &&val, bool id = true);
-    Value(FWString val, bool id = true);
-    Value(int num);
-    Value(bool inf);
-    Value(ValVec const &val);
-    Value(FWValVec val);
-    Value(char const *name, ValVec const &val);
-    Value(std::string &&name, ValVec const &val);
-    Value(FWString name, FWValVec val);
-    Value(Value a, Value b);
-    Value();
+    Value(); // createSpecial
+    static Value createId(FWString val, bool sign = false);
+    static Value createStr(FWString val);
+    static Value createNum(int num);
+    static Value createInf();
+    static Value createSup();
+    static Value createTuple(FWValVec val);
+    static Value createFun(FWString name, FWValVec val, bool sign = false);
     
     // value retrieval
     Type type() const;
     int num() const;
     FWString string() const;
     FWSignature sig() const;
+    bool hasSig() const;
     FWString name() const;
     FWValVec args() const;
+    bool sign() const;
     Value replace(IdValMap const &rep) const;
+
+    // modifying values
+    Value flipSign() const;
 
     // comparison
     size_t hash() const;
@@ -168,42 +185,51 @@ std::ostream& operator<<(std::ostream& out, const Gringo::Value& val);
 
 // }}}
 
-// {{{ definition of Signature::Coder
+ // {{{ definition of FWSignature
 
-inline bool Signature::Coder::encoded(unsigned uid) {
-    return uid & 1u;
+template<typename... Args>
+FWSignature::FWSignature(Args... args) {
+    Signature val(std::forward<Args>(args)...);
+    if (!val.encode<sizeof(unsigned) >= 4>(repr)) {
+        repr = FWSig(val).uid() << 1u;
+    }
 }
 
-inline bool Signature::Coder::encodeVal(Signature const &val, unsigned &uid) {
-    return val.encode<sizeof(unsigned) >= 4>(uid);
+inline FWSignature::FWSignature(unsigned uid) : repr(uid) { }
+
+inline unsigned FWSignature::uid() const { return repr; }
+
+inline Signature FWSignature::operator*() const {
+    return repr & 1u ? Signature(repr >> 4u, repr >> 1u & (1u + 2u + 4u)) : *FWSig(repr >> 1u);
 }
 
-inline unsigned Signature::Coder::encodeUid(unsigned uid) {
-    return uid << 1u;
-}
-
-inline Signature Signature::Coder::decodeVal(unsigned uid) {
-    assert(uid & 1u);
-    return Signature(uid >> 4u, uid >> 1u & (1u + 2u + 4u));
-}
-
-inline unsigned Signature::Coder::decodeUid(unsigned uid) {
-    return uid >> 1u;
-}
+inline bool FWSignature::operator==(FWSignature const &other) const { return repr == other.repr; }
+inline bool FWSignature::operator!=(FWSignature const &other) const { return repr != other.repr; }
+inline bool FWSignature::operator<(FWSignature const &other) const  { return **this < *other; }
+inline bool FWSignature::operator>(FWSignature const &other) const  { return *other < **this; }
+inline bool FWSignature::operator<=(FWSignature const &other) const { return repr == other.repr || **this < *other; }
+inline bool FWSignature::operator>=(FWSignature const &other) const { return repr == other.repr || *other < **this; }
 
 // }}}
 // {{{ definition of Signature
 
-inline Signature::Signature(FWString name, unsigned length)
+inline Signature::Signature(FWString name, unsigned length, bool sign)
     : name_(name)
-    , length_(length) { }
+    , length_(sign | (length << 1)) { }
 
+inline bool Signature::sign() const {
+    return length_ & 1;
+}
 inline FWString Signature::name() const {
     return name_;
 }
 
+inline Signature Signature::flipSign() const {
+    return Signature(name(), length(), !sign());
+}
+
 inline unsigned Signature::length() const {
-    return length_;
+    return length_ >> 1;
 }
 
 inline size_t Signature::hash() const {
@@ -215,18 +241,20 @@ inline bool Signature::operator==(Signature const &other) const {
 }
 
 inline bool Signature::operator!=(Signature const &other) const {
-    return not operator==(other);
+    return !operator==(other);
 }
 
 inline bool Signature::operator<(Signature const &other) const {
-    if (length_ != other.length_) { return length_ < other.length_; }
+    if (sign()   != other.sign())   { return sign()  < other.sign(); }
+    if (length() != other.length()) { return length() < other.length(); }
     return name_ < other.name_;
 }
 
 template<bool enc>
 bool Signature::encode(unsigned &uid) const {
-    if (enc && length_ < 8 && name_.uid() < 16777216u) { 
-        uid = (name_.uid() << 4u) | (length_ << 1u) | 1u;
+    // Note: the number of different signatures is restricted to 2^28 
+    if (enc && !sign() && length() < 8 && name_.uid() < 16777216u) { 
+        uid = (name_.uid() << 4u) | (length() << 1u) | 1u;
         return true;
     }
     return false;
@@ -261,51 +289,57 @@ inline Value::Value(unsigned type, unsigned value)
 inline Value::Value() 
     : Value(SPECIAL, 0) { }
 
-inline Value::Value(bool inf)
-    :  Value(inf ? INF : SUP, 0) { }
+inline Value Value::createInf() {
+    return Value(INF, 0);
+}
 
-inline Value::Value(int val)
-    : Value(NUM, static_cast<unsigned>(val)) { }
+inline Value Value::createSup() {
+    return Value(SUP, 0);
+}
 
-inline Value::Value(const char *val, bool id)
-    : Value(std::string(val), id) { }
+inline Value Value::createNum(int val) {
+    return Value(NUM, static_cast<unsigned>(val));
+}
 
-inline Value::Value(std::string &&val, bool id)
-    : Value(FWString(std::move(val)), id) { }
+inline Value Value::createId(FWString val, bool sign) {
+    return Value(ID, val.uid() << 1 | sign);
+}
 
-inline Value::Value(FWString val, bool id)
-    : Value(id ? ID : STRING, val.uid()) { }
+inline Value Value::createStr(FWString val) {
+    return Value(STRING, val.uid());
+}
 
-inline Value::Value(ValVec const &args)
-    : Value(FWValVec(args)) { }
+inline Value Value::createTuple(FWValVec args) {
+    return createFun("", args);
+}
 
-inline Value::Value(FWValVec args)
-    : Value("", args) { }
-
-inline Value::Value(char const *name, ValVec const &val)
-    : Value(std::string(name), val) { }
-
-inline Value::Value(std::string &&name, ValVec const &val)
-    : Value(FWString(name), FWValVec(val)) { }
-
-inline Value::Value(FWString name, FWValVec args)
-    : Value(FUNC | (FWSignature(name, args.size()).uid() << typeBits),  args.offset()) {
+inline Value Value::createFun(FWString name, FWValVec args, bool sign) {
+    return Value(FUNC | (FWSignature(name, args.size(), sign).uid() << typeBits), args.offset());
 }
 
 inline void Value::print(std::ostream& out) const {
     switch(type()) {
-        case NUM:    { out << num(); break; }
-        case ID:     { out << *string(); break; }
+        case NUM: { out << num(); break; }
+        case ID: {
+            if (value_ & 1) { out << "-"; }
+            out << *string();
+            break;
+        }
         case STRING: { out << '"' << quote(*string()) << '"'; break; }
-        case INF:    { out << "#inf"; break; }
-        case SUP:    { out << "#sup"; break; }
-        case FUNC:   {
-            out << *name();
+        case INF: { out << "#inf"; break; }
+        case SUP: { out << "#sup"; break; }
+        case FUNC: {
+            Signature s = *sig();
+            if (s.sign()) { out << "-"; }
+            out << s.name();
             auto a = args();
             out << "(";
             if (a.size() > 0) {
                 std::copy(a.begin(), a.end() - 1, std::ostream_iterator<Value>(out, ","));
                 out << *(a.end() - 1);
+            }
+            if (a.size() == 1 && s.name() == "") {
+                out << ",";
             }
             out << ")";
             break;
@@ -338,15 +372,21 @@ inline bool Value::operator==(Value const &other) const {
 inline bool Value::less(Value const &other) const {
     if (type() != other.type()) { return type() < other.type(); }
     switch(type()) {
-        case NUM:       { return num() < other.num(); }
-        case ID:
-        case STRING:    { return *string() < *other.string(); }
-        case INF:       { return false; }
-        case SUP:       { return false; }
+        case NUM: { return num() < other.num(); }
+        case ID: {
+            bool sa = value_ & 1, sb = other.value_ & 1;
+            if (sa != sb) { return sa < sb; }
+            return string()->compare(other.string()) < 0;
+        }
+        case STRING: { return *string() < *other.string(); }
+        case INF: { return false; }
+        case SUP: { return false; }
         case FUNC: {
+            Signature sa = *sig(), sb = *other.sig();
+            if (sa.sign() != sb.sign()) { return sa.sign() < sb.sign(); }
             auto aa = args(), ab = other.args();
             if (aa.size() != ab.size()) { return aa.size() < ab.size(); }
-            auto na = name(), nb = other.name();
+            auto na = sa.name(), nb = sb.name();
             if (na != nb) { return na < nb; }
             return std::lexicographical_compare(aa.begin(), aa.end(), ab.begin(), ab.end());
         }
@@ -358,7 +398,8 @@ inline bool Value::less(Value const &other) const {
 
 inline Value Value::replace(IdValMap const &rep) const {
     switch(type()) {
-        case ID:        {
+        case ID: {
+            assert(!(value_ & 1));
             auto it = rep.find(name());
             if (it != rep.end()) { return it->second; }
         }
@@ -366,14 +407,27 @@ inline Value Value::replace(IdValMap const &rep) const {
         case INF:
         case SUP:
         case SPECIAL:
-        case STRING:    { return *this; }
+        case STRING: { return *this; }
         case FUNC: {
             ValVec vals;
             for (auto &x : args()) { vals.emplace_back(x.replace(rep)); }
-            return Value(name(), vals);
+            return createFun(name(), vals);
         }
     }
 
+}
+
+inline Value Value::flipSign() const {
+    switch (type()) {
+        case ID: { return Value(type_, value_ ^ 1); }
+        case FUNC: { 
+            Signature s = *sig();
+            assert(*s.name() != "");
+            return createFun(s.name(), args(), !s.sign());
+        }
+        default: { assert(false); }
+    }
+    return Value();
 }
 
 inline bool Value::operator!=(Value const &other) const {
@@ -407,30 +461,42 @@ inline int Value::num() const {
 
 inline FWString Value::string() const {
     assert(type() == STRING || type() == ID);
-    return value_;
+    return value_ >> (type() == ID);
 }
 
 inline FWSignature Value::sig() const {
     switch (type()) {
         case FUNC: { return FWSignature(type_ >> typeBits); }
-        case ID:   { return FWSignature(string(), 0); }
+        case ID:   { return FWSignature(string(), 0, value_ & 1); }
         default:   { assert(false); }
     }
     return FWSignature("", 0);
 }
 
+inline bool Value::hasSig() const {
+    switch (type()) {
+        case FUNC:
+        case ID:   { return true; }
+        default:   { return false; }
+    }
+}
+
 inline FWString Value::name() const {
     switch (type())  {
         case FUNC: { return (*FWSignature(type_ >> typeBits)).name(); }
-        case ID:   { return value_; }
-        default:   { assert(false); } 
+        case ID:   { return value_ >> 1; }
+        default:   { assert(false); }
     }
     return 0u;
 }
 
 inline FWValVec Value::args() const {
     assert(type() == FUNC);
-    return FWValVec((*FWSignature(type_ >> typeBits)).length(), value_);
+    return FWValVec(FWValVec::fromOffset, (*FWSignature(type_ >> typeBits)).length(), value_);
+}
+inline bool Value::sign() const {
+    assert(hasSig());
+    return type() == Value::ID ? value_ & 1 : (*sig()).sign();
 }
 
 inline Value::operator Value::POD&() {
@@ -519,6 +585,11 @@ namespace std {
 template<>
 struct hash<Gringo::Signature> {
     size_t operator()(Gringo::Signature const &sig) const { return sig.hash(); }
+};
+
+template<>
+struct hash<Gringo::FWSignature> {
+    size_t operator()(Gringo::FWSignature const &sig) const { return sig.uid(); }
 };
 
 template<>

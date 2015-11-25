@@ -31,12 +31,12 @@ struct Queue;
 // {{{ declaration of Statement
 
 struct Statement;
-typedef std::unique_ptr<Statement> UStm;
-typedef std::vector<UStm> UStmVec;
-typedef std::vector<UStmVec> UStmVecVec;
+using UStm       = std::unique_ptr<Statement>;
+using UStmVec    = std::vector<UStm>;
+using UStmVecVec = std::vector<UStmVec>;
 
 struct Statement : Printable {
-    typedef Dependency<UStm, HeadOccurrence> Dep;
+    using Dep = Dependency<UStm, HeadOccurrence>;
     virtual bool isNormal() const = 0;
     virtual void analyze(Dep::Node &node, Dep &dep) = 0;
     virtual void startLinearize(bool active) = 0;

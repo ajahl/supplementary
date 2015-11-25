@@ -40,10 +40,11 @@ public:
     void parseError(Location const &loc, std::string const &token);
     void pushFile(std::string &&filename);
     void pushStream(std::string &&name, std::unique_ptr<std::istream>);
-    void pushBlocks(ProgramVec &&blocks);
+    void pushBlock(std::string const &name, IdVec const &vec, std::string const &block);
     int lex(void *pValue, Location &loc);
     bool parseDefine(std::string const &define);
     bool parse();
+    bool empty() { return LexerState::empty(); }
     void include(unsigned sUid, Location const &loc, bool include);
     INongroundProgramBuilder &builder();
     // {{{ aggregate helper functions
@@ -65,6 +66,7 @@ private:
 
 private:
     std::set<std::string> filenames_;
+    bool                  incmodeIncluded_ = false;
     unsigned not_;
     INongroundProgramBuilder &pb_;
     struct Aggr
@@ -76,7 +78,6 @@ private:
     };
     Indexed<Aggr> _aggregates;
     int           _startSymbol;
-    StringVec     _blocks;
     FWString      _filename;
 };
 

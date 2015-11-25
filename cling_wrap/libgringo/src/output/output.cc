@@ -20,6 +20,8 @@
 
 #include "gringo/output/output.hh"
 #include "gringo/logger.hh"
+#include "gringo/output/aggregates.hh"
+#include <cstring>
 
 namespace Gringo { namespace Output {
 
@@ -169,11 +171,19 @@ struct DefaultLparseTranslator : LparseTranslator {
     using ConstraintVec   = std::vector<LinearConstraint>;
     using DisjointConsVec = std::vector<DisjointConstraint>;
 
-    DefaultLparseTranslator(StmPrinter const &printer)
-        : printer(printer) { }
+    DefaultLparseTranslator(PredDomMap &domains, StmPrinter const &printer)
+        : domains(domains)
+        , printer(printer) { }
     BoundMap::value_type &addBound(Value x) {
         auto it = boundMap.find(x);
         return it != boundMap.end() ? *it : *boundMap.emplace_back(x).first;
+    }
+    virtual bool isAtomFromPreviousStep(ULit const &lit) {
+        PredicateDomain::element_type *atom = lit->isAtom();
+        if (!atom) { return false; }
+        if (!atom->first.hasSig()) { return false; }
+        auto it = domains.find(atom->first.sig());
+        return it != domains.end() && atom->second.generation() < it->second.exports.incOffset;
     }
     static int min() { return std::numeric_limits<int>::min(); }
     static int max() { return std::numeric_limits<int>::max(); }
@@ -231,7 +241,7 @@ struct DefaultLparseTranslator : LparseTranslator {
             minimizeChanged_ = false;
         }
     }
-    virtual void outputSymbols(LparseOutputter &out, PredDomMap const &domains, OutputPredicates const &outPreds) {
+    virtual void outputSymbols(LparseOutputter &out, OutputPredicates const &outPreds) {
         std::vector<std::tuple<unsigned, Value, int>> symtab;
         auto show = [&](Bound const &bound, AtomState *cond) -> void {
             std::string const *name = nullptr;
@@ -267,28 +277,29 @@ struct DefaultLparseTranslator : LparseTranslator {
         // show explicitely shown csp variables (if not shown above)
         auto it(domains.find(Signature("#show", 2)));
         if (it != domains.end()) {
-            for (auto jt = it->second.exports.begin() + it->second.exports.incOffset, je = it->second.exports.end(); jt != je; ++jt) {
+            for (auto jt = it->second.exports.begin() + it->second.exports.showOffset, je = it->second.exports.end(); jt != je; ++jt) {
                 if ((jt->get().first.args().begin()+1)->num() == 1) {
-                    Value val = *(jt->get().first.args().begin());
+                    Value val = jt->get().first.args().front();
                     auto bound = boundMap.find(val);
                     if (bound != boundMap.end()) {
                         if (!showBound(outPreds, *bound)) { show(*bound, &jt->get().second); }
                     }
                     else {
-                        GRINGO_REPORT(W_TERM_UNDEFINED) 
-                            << "warning: trying to show constraint variable that does not occur in program:\n"
+                        GRINGO_REPORT(W_ATOM_UNDEFINED) 
+                            << "info: constraint variable does not occur in program:\n"
                             << "  $" << val << "\n";
                     }
                 }
             }
+            // Note: showNext is called in LparseHandler::finish
         }
         // check for signatures that did not occur in the program
         for (auto &x : outPreds) {
             if (std::get<1>(x) != Signature("", 0) && std::get<2>(x)) {
                 auto it(seenSigs.find(std::get<1>(x)));
                 if (it == seenSigs.end()) {
-                    GRINGO_REPORT(W_TERM_UNDEFINED) 
-                        << std::get<0>(x) << ": warning: no matching occurrence for signature:\n"
+                    GRINGO_REPORT(W_ATOM_UNDEFINED) 
+                        << std::get<0>(x) << ": info: no constraint variables over signature occur in program:\n"
                         << "  $" << *std::get<1>(x) << "\n";
                     seenSigs.emplace(std::get<1>(x));
                 }
@@ -297,19 +308,80 @@ struct DefaultLparseTranslator : LparseTranslator {
         out.finishRules();
         for (auto &y : symtab) {
             std::ostringstream oss;
-            oss
+            oss 
                 << std::get<1>(y)
                 << "="
                 << std::get<2>(y);
-            out.printSymbol(std::get<0>(y), oss.str());
+            out.printSymbol(std::get<0>(y), Value::createId(oss.str()));
         }
+        if (!outPreds.empty()) {
+            // show what was requested
+            for (auto &x : outPreds) {
+                if (!std::get<2>(x)) {
+                    auto it(domains.find(std::get<1>(x)));
+                    if (it != domains.end()) {
+                        for (auto jt = it->second.exports.begin() + it->second.exports.showOffset, je = it->second.exports.end(); jt != je; ++jt) {
+                            if (!jt->get().second.hasUid()) { jt->get().second.uid(out.newUid()); }
+                            out.printSymbol(jt->get().second.uid(), jt->get().first);
+                        }
+                        it->second.exports.showNext();
+                    }
+                }
+            }
+        }
+        else {
+            // show everything non-internal
+            for (auto &x : domains) {
+                std::string const &name(*(*x.first).name());
+                if ((name.empty() || name.front() != '#')) {
+                    for (auto jt = x.second.exports.begin() + x.second.exports.showOffset, je = x.second.exports.end(); jt != je; ++jt) {
+                        if (!jt->get().second.hasUid()) { jt->get().second.uid(out.newUid()); }
+                        out.printSymbol(jt->get().second.uid(), jt->get().first);
+                    }
+                    x.second.exports.showNext();
+                }
+            }
+        }
+        // show terms
+        it = domains.find(Signature("#show", 2));
+        if (it != domains.end()) {
+            for (auto jt = it->second.exports.begin() + it->second.exports.showOffset, je = it->second.exports.end(); jt != je; ++jt) {
+                if ((jt->get().first.args().begin()+1)->num() == 0) {
+                    if (!jt->get().second.hasUid()) { jt->get().second.uid(out.newUid()); }
+                    out.printSymbol(jt->get().second.uid(), jt->get().first.args().front());
+                }
+            }
+            it->second.exports.showNext();
+        }
+
+        // NOTE: otherwise clasp will complain about redefinition errors...
+        trueLit = nullptr;
     }
-    void atoms(int atomset, std::function<bool(unsigned)> const &isTrue, ValVec &atoms, PredDomMap const &domains, OutputPredicates const &outPreds) {
+    void atoms(int atomset, std::function<bool(unsigned)> const &isTrue, ValVec &atoms, OutputPredicates const &outPreds) {
+        if (atomset & (Model::ATOMS | Model::SHOWN)) {
+            for (auto &x : domains) {
+                Signature sig = *x.first;
+                std::string const &name = *sig.name();
+                if (((atomset & Model::ATOMS || (atomset & Model::SHOWN && showSig(outPreds, *x.first))) && !name.empty() && name.front() != '#')) {
+                    for (auto &y: x.second.domain) {
+                        if (y.second.defined() && y.second.hasUid() && isTrue(y.second.uid())) { atoms.emplace_back(y.first); }
+                    }
+                }
+            }
+        }
+        if ((atomset & (Model::TERMS | Model::SHOWN))) {
+            auto it(domains.find(Signature("#show", 2)));
+            if (it != domains.end()) {
+                for (auto &y: it->second.domain) {
+                    if (y.first.args().back() == Value::createNum(0) && y.second.defined() && y.second.hasUid() && isTrue(y.second.uid())) { atoms.emplace_back(y.first.args().front()); }
+                }
+            }
+        }
         auto showCsp = [&isTrue, &atoms](Bound const &bound) {
             assert(!bound.atoms.empty());
             int prev = bound.atoms.front().first;
             for (auto it = bound.atoms.begin()+1; it != bound.atoms.end() && !isTrue(it->second->uid); ++it);
-            atoms.emplace_back(Value("$", {bound.var, prev}));
+            atoms.emplace_back(Value::createFun("$", {bound.var, Value::createNum(prev)}));
         };
         if (atomset & (Model::CSP | Model::SHOWN)) {
             for (auto &x : boundMap) {
@@ -320,8 +392,8 @@ struct DefaultLparseTranslator : LparseTranslator {
             auto it(domains.find(Signature("#show", 2)));
             if (it != domains.end()) {
                 for (auto &y: it->second.domain) {
-                    if (y.first.args().back() == Value(1) && y.second.defined() && y.second.hasUid() && isTrue(y.second.uid())) {
-                        auto bound = boundMap.find(*y.first.args().begin());
+                    if (y.first.args().back() == Value::createNum(1) && y.second.defined() && y.second.hasUid() && isTrue(y.second.uid())) {
+                        auto bound = boundMap.find(y.first.args().front());
                         if (bound != boundMap.end() && !showBound(outPreds, *bound)) { showCsp(*bound); }
                     }
                 }
@@ -330,8 +402,34 @@ struct DefaultLparseTranslator : LparseTranslator {
     }
     void translateMinimize();
 
+    ULit makeAux(NAF naf = NAF::POS) {
+        return gringo_make_unique<AuxLiteral>(std::make_shared<AuxAtom>(auxAtom()), naf);
+    }
+
+    ULit getTrueLit() {
+        if (!trueLit) {
+            trueLit = makeAux();
+            LRC().addHead(trueLit).toLparse(*this);
+        }
+        return get_clone(trueLit);
+    }
+    virtual void simplify(AssignmentLookup assignment) {
+        minimize.erase(std::remove_if(minimize.begin(), minimize.end(), [&assignment](MinimizeList::value_type &elem) {
+            bool remove = false;
+            elem.second.erase(std::remove_if(elem.second.begin(), elem.second.end(), [&assignment,&remove](ULit &lit) {
+                auto value = lit->getTruth(assignment);
+                switch (value.second) {
+                    case TruthValue::True:  { return true; }
+                    case TruthValue::False: { remove = true; }
+                    default:                { return false; }
+                }
+            }), elem.second.end());
+            return remove;
+        }), minimize.end());
+    }
     virtual ~DefaultLparseTranslator() { }
 
+    PredDomMap        &domains;
     BoundMap           boundMap;
     ConstraintVec      constraints;
     DisjointConsVec    disjointCons;
@@ -341,6 +439,7 @@ struct DefaultLparseTranslator : LparseTranslator {
     bool               minimizeChanged_ = false;
     std::set<FWSignature> seenSigs;
     BoundMap::iterator incBoundOffset;
+    ULit               trueLit;
 };
 
 // }}}
@@ -363,34 +462,12 @@ void DefaultLparseTranslator::translateMinimize() {
         ULitWeightVec weightLits;
         for (auto &conds : y.second) {
             ULitVec condLits;
-            int weight((*conds.first.begin()).num());
+            int weight(conds.first.front().num());
             for (auto &cond : conds.second) {
-                if (cond.size() == 1) {
-                    ULit lit = std::move(cond.front());
-                    condLits.emplace_back(std::move(lit));
-                }
-                else {
-                    // TODO: a function that creates an inverted literal would be nice!!!
-                    SAuxAtom atom(std::make_shared<AuxAtom>(auxAtom()));
-                    printer(LparseRule(atom, std::move(cond)));
-                    condLits.emplace_back(make_unique<AuxLiteral>(atom, false));
-                }
+                condLits.emplace_back(getEqualClause(*this, std::move(cond), true, false));
             }
-            if (condLits.size() == 1) {
-                if (weight < 0) {
-                    SAuxAtom atom(std::make_shared<AuxAtom>(auxAtom()));
-                    printer(LparseRule(atom, nullptr, std::move(condLits.front())));
-                    weightLits.emplace_back(std::move(make_unique<AuxLiteral>(atom, true)), std::abs(weight));
-                }
-                else {
-                    weightLits.emplace_back(std::move(condLits.front()), std::abs(weight));
-                }
-            }
-            else {
-                SAuxAtom atom(std::make_shared<AuxAtom>(auxAtom()));
-                for (auto &cond : condLits) { printer(LparseRule(atom, std::move(cond), nullptr)); }
-                weightLits.emplace_back(make_unique<AuxLiteral>(atom, weight < 0), std::abs(weight));
-            }
+            ULit lit = getEqualClause(*this, std::move(condLits), false, false);
+            weightLits.emplace_back(weight < 0 ? lit->negateLit(*this) : std::move(lit), std::abs(weight));
         }
         printer(LparseMinimize(y.first, std::move(weightLits)));
     }
@@ -401,25 +478,23 @@ void DefaultLparseTranslator::translateMinimize() {
 bool Bound::init(DefaultLparseTranslator &x) {
     if (modified) {
         modified = false;
-        if (_range.empty()) { x.printer(LparseRule(SAuxAtomVec(), ULitVec(), false)); }
+        if (_range.empty()) { LRC().toLparse(x); }
         else {
             if (_range.front() == std::numeric_limits<int>::min() || _range.back()+1 == std::numeric_limits<int>::max()) {
                 if      (_range.front()  != std::numeric_limits<int>::min()) { _range.remove(_range.front()+1, std::numeric_limits<int>::max()); }
                 else if (_range.back()+1 != std::numeric_limits<int>::max()) { _range.remove(std::numeric_limits<int>::min(), _range.back()); }
                 else                                                        { _range.clear(), _range.add(0, 1); }
-                GRINGO_REPORT(W_TERM_UNDEFINED)
-                    << "warning: unbounded constraint variable, domain is set to [" << _range.front() << "," << _range.back() << "]:\n"
-                    << "  " << var << "\n";
+                GRINGO_REPORT(W_VARIABLE_UNBOUNDED)
+                    << "warning: unbounded constraint variable:\n"
+                    << "  domain of '" << var << "' is set to [" << _range.front() << "," << _range.back() << "]\n"
                     ;
             }
             if (atoms.empty()) {
                 auto assign = [&](SAuxAtom a, SAuxAtom b) {
                     if (b) {
-                        SAuxAtomVec head;
-                        ULitVec body;
-                        head.emplace_back(b);
-                        if (a) { body.emplace_back(make_unique<AuxLiteral>(a, false)); }
-                        x.printer(LparseRule(std::move(head), std::move(body), true));
+                        LRC rule(true);
+                        if (a) { rule.addBody(gringo_make_unique<AuxLiteral>(a, NAF::POS)); }
+                        rule.addHead(gringo_make_unique<AuxLiteral>(b, NAF::POS)).toLparse(x);
                     }
                 };
                 for (auto y : _range) { 
@@ -434,12 +509,12 @@ bool Bound::init(DefaultLparseTranslator &x) {
                 int l = _range.front(), r = _range.back();
                 for (auto jt = atoms.begin() + 1; jt != atoms.end(); ++jt) {
                     int w = (jt - 1)->first;
-                    if (w < l)                           { x.printer(LparseRule(make_unique<AuxLiteral>(jt->second, false), nullptr)); }
+                    if (w < l)                           { LRC().addBody(gringo_make_unique<AuxLiteral>(jt->second, NAF::POS)).toLparse(x); }
                     else if (w >= r)                     { 
-                        x.printer(LparseRule(make_unique<AuxLiteral>(jt->second, true), nullptr));
+                        LRC().addBody(gringo_make_unique<AuxLiteral>(jt->second, NAF::NOT)).toLparse(x);
                         if (w == r) { next.emplace_back(*(jt - 1)); }
                     }
-                    else if (!_range.contains(w, w + 1)) { x.printer(LparseRule(make_unique<AuxLiteral>((jt-1)->second, true), make_unique<AuxLiteral>(jt->second, false))); }
+                    else if (!_range.contains(w, w + 1)) { LRC().addBody(gringo_make_unique<AuxLiteral>((jt-1)->second, NAF::NOT)).addBody(gringo_make_unique<AuxLiteral>(jt->second, NAF::POS)).toLparse(x); }
                     else                                 { next.emplace_back(*(jt - 1)); }
                 }
                 if (atoms.back().first <= r) { next.emplace_back(atoms.back()); }
@@ -463,7 +538,10 @@ void LinearConstraint::Generate::generate(StateVec::iterator it, int current, in
             aux.emplace_back(std::make_shared<AuxAtom>(trans.auxAtom()));
             for (auto &x : states) {
                 if (x.atom != x.bound.atoms.end() && x.atom->second) { 
-                    trans.printer(LparseRule(aux.back(), make_unique<AuxLiteral>(x.atom->second, x.coef < 0), nullptr));
+                    LRC()
+                        .addHead(gringo_make_unique<AuxLiteral>(aux.back(), NAF::POS))
+                        .addBody(gringo_make_unique<AuxLiteral>(x.atom->second, x.coef < 0 ? NAF::NOT : NAF::POS))
+                        .toLparse(trans);
                 }
             }
         }
@@ -490,8 +568,8 @@ bool LinearConstraint::Generate::init() {
     if (current <= getBound()) {
         generate(states.begin(), current, remainder); 
         ULitVec body;
-        for (auto &x : aux) { body.emplace_back(make_unique<AuxLiteral>(x, false)); }
-        trans.printer(LparseRule(cons.atom, std::move(body)));
+        for (auto &x : aux) { body.emplace_back(gringo_make_unique<AuxLiteral>(x, NAF::POS)); }
+        LRC().addHead(gringo_make_unique<AuxLiteral>(cons.atom, NAF::POS)).addBody(std::move(body)).toLparse(trans);
     }
     return current <= cons.bound;
 }
@@ -517,9 +595,9 @@ bool DisjointConstraint::encode(DefaultLparseTranslator &x) {
                 auto &aux = current[i*coef + fixed];
                 if (!aux) { aux = std::make_shared<AuxAtom>(x.auxAtom()); }
                 ULitVec lits = get_clone(cond);
-                if ((it-1)->second)          { lits.emplace_back(make_unique<AuxLiteral>((it-1)->second, true)); }
-                if (it != bound.atoms.end()) { lits.emplace_back(make_unique<AuxLiteral>(it->second, false)); }
-                x.printer(LparseRule(aux, std::move(lits)));
+                if ((it-1)->second)          { lits.emplace_back(gringo_make_unique<AuxLiteral>((it-1)->second, NAF::NOT)); }
+                if (it != bound.atoms.end()) { lits.emplace_back(gringo_make_unique<AuxLiteral>(it->second, NAF::POS)); }
+                LRC().addHead(gringo_make_unique<AuxLiteral>(aux, NAF::POS)).addBody(std::move(lits)).toLparse(x);
                 values.insert(i*coef + fixed);
                 ++it;
             }
@@ -529,7 +607,7 @@ bool DisjointConstraint::encode(DefaultLparseTranslator &x) {
                 case 0: {
                     auto &aux = current[condVal.fixed];
                     if (!aux) { aux = std::make_shared<AuxAtom>(x.auxAtom()); }
-                    x.printer(LparseRule(aux, std::move(condVal.lits)));
+                    LRC().addHead(gringo_make_unique<AuxLiteral>(aux, NAF::POS)).addBody(std::move(condVal.lits)).toLparse(x);
                     values.insert(condVal.fixed);
                     break;
                 }
@@ -539,7 +617,7 @@ bool DisjointConstraint::encode(DefaultLparseTranslator &x) {
                 }
                 default: {
                     // create a bound possibly with holes
-                    auto &b = *x.boundMap.emplace_back(Value("#aux" + std::to_string(x.auxAtom()))).first;
+                    auto &b = *x.boundMap.emplace_back(Value::createId("#aux" + std::to_string(x.auxAtom()))).first;
                     b.clear();
                     std::set<int> values;
                     values.emplace(0);
@@ -564,8 +642,7 @@ bool DisjointConstraint::encode(DefaultLparseTranslator &x) {
                     x.addLinearConstraint(aux, get_clone(condVal.value), -condVal.fixed-1);
                     for (auto &add : condVal.value) { add.first *= -1; }
                     x.addLinearConstraint(aux, get_clone(condVal.value), condVal.fixed-1);
-                    x.printer(LparseRule(make_unique<AuxLiteral>(aux, false), nullptr));
-
+                    LRC().addBody(gringo_make_unique<AuxLiteral>(aux, NAF::POS)).toLparse(x);
                     // then proceed as in case one
                     encodeSingle(condVal.lits, 1, b.var, 0);
                     break;
@@ -579,14 +656,14 @@ bool DisjointConstraint::encode(DefaultLparseTranslator &x) {
         for (auto &layer : layers) {
             auto it = layer.find(value);
             if (it != layer.end()) {
-                card.emplace_back(make_unique<AuxLiteral>(it->second, false), 1);
+                card.emplace_back(gringo_make_unique<AuxLiteral>(it->second, NAF::POS), 1);
             }
         }
         SAuxAtom aux = std::make_shared<AuxAtom>(x.auxAtom());
-        checks.emplace_back(make_unique<AuxLiteral>(aux, true));
+        checks.emplace_back(gringo_make_unique<AuxLiteral>(aux, NAF::NOT));
         x.printer(WeightRule(aux, 2, std::move(card)));
     }
-    x.printer(LparseRule(atom, std::move(checks)));
+    LRC().addHead(gringo_make_unique<AuxLiteral>(atom, NAF::POS)).addBody(std::move(checks)).toLparse(x);
     return true;
 }
 
@@ -595,8 +672,8 @@ bool DisjointConstraint::encode(DefaultLparseTranslator &x) {
 // {{{ definition of LparseHandler
 
 struct LparseHandler : StmHandler {
-    LparseHandler(LparseOutputter &out, LparseDebug debug) 
-        : trans([&out, debug](Statement const &x) {
+    LparseHandler(PredDomMap &domains, LparseOutputter &out, LparseDebug debug) 
+        : trans(domains, [&out, debug](Statement const &x) {
             if ((unsigned)debug & (unsigned)LparseDebug::LPARSE) { std::cerr << "%%"; x.printPlain(std::cerr); }
             x.printLparse(out);
         }) 
@@ -607,71 +684,21 @@ struct LparseHandler : StmHandler {
         x.toLparse(trans);
     }
     virtual void incremental() { out.incremental(); }
-    virtual void operator()(PredicateDomain::element_type &head, ExternalType type) {
+    virtual void operator()(PredicateDomain::element_type &head, TruthValue type) {
         if (!head.second.hasUid()) { head.second.uid(out.newUid()); }
         out.printExternal(head.second.uid(), type);
     }
-    virtual void finish(PredDomMap &domains, OutputPredicates &outPreds) {
+    virtual void finish(OutputPredicates &outPreds) {
         out.disposeMinimize() = trans.minimizeChanged();
         trans.translate(); 
-        trans.outputSymbols(out, domains, outPreds);
-        if (!outPreds.empty()) {
-            for (auto &x : outPreds) {
-                if (!std::get<2>(x)) {
-                    auto it(domains.find(std::get<1>(x)));
-                    if (it != domains.end()) {
-                        for (auto jt = it->second.exports.begin() + it->second.exports.incOffset, je = it->second.exports.end(); jt != je; ++jt) {
-                            if (!jt->get().second.hasUid()) { jt->get().second.uid(out.newUid()); }
-                            out.printSymbol(jt->get().second.uid(), jt->get().first);
-                        }
-                    }
-                }
-            }
-        }
-        else {
-            for (auto &x : domains) {
-                std::string const &name(*(*x.first).name());
-                if ((name.empty() || name.front() != '#') && outPreds.empty()) {
-                    for (auto jt = x.second.exports.begin() + x.second.exports.incOffset, je = x.second.exports.end(); jt != je; ++jt) {
-                        if (!jt->get().second.hasUid()) { jt->get().second.uid(out.newUid()); }
-                        out.printSymbol(jt->get().second.uid(), jt->get().first);
-                    }
-                }
-            }
-        }
-        // Note: show domains are cleared anyway
-        auto it(domains.find(Signature("#show", 2)));
-        if (it != domains.end()) {
-            for (auto jt = it->second.exports.begin() + it->second.exports.incOffset, je = it->second.exports.end(); jt != je; ++jt) {
-                if ((jt->get().first.args().begin()+1)->num() == 0) {
-                    if (!jt->get().second.hasUid()) { jt->get().second.uid(out.newUid()); }
-                    out.printSymbol(jt->get().second.uid(), *jt->get().first.args().begin());
-                }
-            }
-        }
+        trans.outputSymbols(out, outPreds);
         out.finishSymbols();
     }
-    virtual void atoms(int atomset, std::function<bool(unsigned)> const &isTrue, ValVec &atoms, PredDomMap const &domains, OutputPredicates const &outPreds) {
-        if (atomset & (Model::ATOMS | Model::SHOWN)) {
-            for (auto &x : domains) {
-                Signature sig = *x.first;
-                std::string const &name = *sig.name();
-                if ((atomset & Model::ATOMS && !name.empty() && name.front() != '#') || (atomset & Model::SHOWN && showSig(outPreds, *x.first))) {
-                    for (auto &y: x.second.domain) {
-                        if (y.second.defined() && y.second.hasUid() && isTrue(y.second.uid())) { atoms.emplace_back(y.first); }
-                    }
-                }
-            }
-        }
-        if ((atomset & (Model::TERMS | Model::SHOWN))) {
-            auto it(domains.find(Signature("#show", 2)));
-            if (it != domains.end()) {
-                for (auto &y: it->second.domain) {
-                    if (y.first.args().back() == Value(0) && y.second.defined() && y.second.hasUid() && isTrue(y.second.uid())) { atoms.emplace_back(y.first.args().front()); }
-                }
-            }
-        }
-        trans.atoms(atomset, isTrue, atoms, domains, outPreds);
+    virtual void atoms(int atomset, std::function<bool(unsigned)> const &isTrue, ValVec &atoms, OutputPredicates const &outPreds) {
+        trans.atoms(atomset, isTrue, atoms, outPreds);
+    }
+    virtual void simplify(AssignmentLookup assignment) {
+        trans.simplify(assignment);
     }
     virtual ~LparseHandler() { }
 
@@ -684,20 +711,24 @@ struct LparseHandler : StmHandler {
 // {{{ definition of LparsePlainHandler
 
 struct LparsePlainHandler : StmHandler {
-    LparsePlainHandler(std::ostream &out)
-        : trans([&out](Statement const &x)                { x.printPlain(out); })
+    LparsePlainHandler(PredDomMap &domains, std::ostream &out)
+        : trans(domains, [&out](Statement const &x) { x.printPlain(out); })
         , out(out) { }
-    virtual void operator()(Statement &x)                 { x.toLparse(trans); }
-    virtual void operator()(PredicateDomain::element_type &head, ExternalType type) {
+    virtual void operator()(Statement &x) { x.toLparse(trans); }
+    virtual void operator()(PredicateDomain::element_type &head, TruthValue type) {
         switch (type) {
-            case ExternalType::E_FALSE: { out << "#external " << head.first << ".\n"; break; }
-            case ExternalType::E_TRUE:  { out << "#external " << head.first << "=true.\n"; break; }
-            case ExternalType::E_FREE:  { out << "#external " << head.first << "=free.\n"; break; }
+            case TruthValue::False: { out << "#external " << head.first << ".\n"; break; }
+            case TruthValue::True:  { out << "#external " << head.first << "=true.\n"; break; }
+            case TruthValue::Free:  { out << "#external " << head.first << "=free.\n"; break; }
+            case TruthValue::Open:  { out << "#external " << head.first << "=open.\n"; break; }
         }
     }
-    virtual void finish(PredDomMap &, OutputPredicates &) { trans.translate(); }
-    virtual void atoms(int, std::function<bool(unsigned)> const &, ValVec &, PredDomMap const &, OutputPredicates const &) { }
-    virtual ~LparsePlainHandler()                         { }
+    virtual void finish(OutputPredicates &) { trans.translate(); }
+    virtual void atoms(int, std::function<bool(unsigned)> const &, ValVec &, OutputPredicates const &) { }
+    virtual void simplify(AssignmentLookup assignment) {
+        trans.simplify(assignment);
+    }
+    virtual ~LparsePlainHandler() { }
 
     DefaultLparseTranslator trans;
     std::ostream           &out;
@@ -710,20 +741,22 @@ struct PlainHandler : StmHandler {
     PlainHandler(std::ostream &out) : out(out)            { }
     virtual ~PlainHandler()                               { }
     virtual void operator()(Statement &x)                 { x.printPlain(out); }
-    virtual void operator()(PredicateDomain::element_type &head, ExternalType type) {
+    virtual void operator()(PredicateDomain::element_type &head, TruthValue type) {
         switch (type) {
-            case ExternalType::E_FALSE: { out << "#external " << head.first << ".\n"; break; }
-            case ExternalType::E_TRUE:  { out << "#external " << head.first << "=true.\n"; break; }
-            case ExternalType::E_FREE:  { out << "#external " << head.first << "=free.\n"; break; }
+            case TruthValue::False: { out << "#external " << head.first << ".\n"; break; }
+            case TruthValue::True:  { out << "#external " << head.first << "=true.\n"; break; }
+            case TruthValue::Free:  { out << "#external " << head.first << "=free.\n"; break; }
+            case TruthValue::Open:  { out << "#external " << head.first << "=open.\n"; break; }
         }
     }
-    virtual void finish(PredDomMap &, OutputPredicates &outPreds) { 
+    virtual void finish(OutputPredicates &outPreds) { 
         for (auto &x : outPreds) { 
             if (std::get<1>(x) != Signature("", 0)) { std::cout << "#show " << (std::get<2>(x) ? "$" : "") << *std::get<1>(x) << ".\n"; }
             else                                    { std::cout << "#show.\n"; }
         }
     }
-    virtual void atoms(int, std::function<bool(unsigned)> const &, ValVec &, PredDomMap const &, OutputPredicates const &) { }
+    virtual void atoms(int, std::function<bool(unsigned)> const &, ValVec &, OutputPredicates const &) { }
+    virtual void simplify(AssignmentLookup) { }
     std::ostream &out;
 };
 
@@ -799,11 +832,12 @@ void PlainLparseOutputter::printDisjunctiveRule(AtomVec const &head, LitVec cons
     for (auto &x : body) { if (x > 0) { out << " " << +x; } }
     out << "\n";
 }
-void PlainLparseOutputter::printExternal(unsigned atomUid, ExternalType type) { 
+void PlainLparseOutputter::printExternal(unsigned atomUid, TruthValue type) { 
     switch (type) {
-        case ExternalType::E_FALSE: { out << "91 " << atomUid << " 0\n"; break; }
-        case ExternalType::E_TRUE:  { out << "91 " << atomUid << " 1\n"; break; }
-        case ExternalType::E_FREE:  { out << "92 " << atomUid << "\n"; break; }
+        case TruthValue::False: { out << "91 " << atomUid << " 0\n"; break; }
+        case TruthValue::True:  { out << "91 " << atomUid << " 1\n"; break; }
+        case TruthValue::Open:  { out << "91 " << atomUid << " 2\n"; break; }
+        case TruthValue::Free:  { out << "92 " << atomUid << "\n"; break; }
     }
 }
 unsigned PlainLparseOutputter::falseUid()                                   { return 1; }
@@ -817,16 +851,16 @@ PlainLparseOutputter::~PlainLparseOutputter()                               { }
 // {{{ definition of OutputBase
 
 OutputBase::OutputBase(OutputPredicates &&outPreds, std::ostream &out, bool lparse)
-    : handler(lparse ? UStmHandler(new LparsePlainHandler(out)) : UStmHandler(new PlainHandler(out))) 
+    : handler(lparse ? UStmHandler(new LparsePlainHandler(domains, out)) : UStmHandler(new PlainHandler(out))) 
     , outPreds(std::move(outPreds)) { }
 OutputBase::OutputBase(OutputPredicates &&outPreds, LparseOutputter &out, LparseDebug debug) 
-    : handler(make_unique<LparseHandler>(out, debug))
+    : handler(gringo_make_unique<LparseHandler>(domains, out, debug))
     , outPreds(std::move(outPreds)) { }
 void OutputBase::output(Value const &val) {
     auto it(domains.find(val.sig()));
     assert(it != domains.end());
     auto ret(it->second.insert(val, true));
-    if (!std::get<2>(ret) || !std::get<1>(ret)) {
+    if (!std::get<2>(ret)) {
         tempRule.head = std::get<0>(ret);
         tempRule.body.clear();
         (*handler)(tempRule);
@@ -835,7 +869,11 @@ void OutputBase::output(Value const &val) {
 void OutputBase::incremental() {
     handler->incremental();
 }
-void OutputBase::external(PredicateDomain::element_type &head, ExternalType type) {
+void OutputBase::createExternal(PredicateDomain::element_type &head) {
+    head.second.setExternal(true);
+    (*handler)(head, TruthValue::False);
+}
+void OutputBase::assignExternal(PredicateDomain::element_type &head, TruthValue type) {
     (*handler)(head, type);
 }
 void OutputBase::output(UStm &&x) {
@@ -851,7 +889,20 @@ void OutputBase::flush() {
     stms.clear();
 }
 void OutputBase::finish() { 
-    handler->finish(domains, outPreds);
+    if (!outPreds.empty()) {
+        std::move(outPredsForce.begin(), outPredsForce.end(), std::back_inserter(outPreds));
+        outPredsForce.clear();
+    }
+    handler->finish(outPreds);
+    std::vector <Gringo::FWSignature> rm;
+    for (auto &x : domains) {
+        if (std::strncmp((*(*x.first).name()).c_str(), "#d", 2) == 0) {
+            rm.emplace_back(x.first);
+        }
+    }
+    for (auto const &x : rm) {
+        domains.erase(x);
+    }
 } 
 void OutputBase::checkOutPreds() {
     auto le = [](OutputPredicates::value_type const &x, OutputPredicates::value_type const &y) -> bool { 
@@ -868,7 +919,7 @@ void OutputBase::checkOutPreds() {
             auto it(domains.find(std::get<1>(x)));
             if (it == domains.end()) {
                 GRINGO_REPORT(W_ATOM_UNDEFINED) 
-                    << std::get<0>(x) << ": warning: no matching occurrence for signature:\n"
+                    << std::get<0>(x) << ": info: no atoms over signature occur in program:\n"
                     << "  " << *std::get<1>(x) << "\n";
             }
         }
@@ -876,7 +927,7 @@ void OutputBase::checkOutPreds() {
 }
 ValVec OutputBase::atoms(int atomset, std::function<bool(unsigned)> const &isTrue) const {
     Gringo::ValVec ret;
-    handler->atoms(atomset, isTrue, ret, domains, outPreds);
+    handler->atoms(atomset, isTrue, ret, outPreds);
     return ret;
 }
 Gringo::AtomState const *OutputBase::find(Gringo::Value val) const {
@@ -902,6 +953,50 @@ PredicateDomain::element_type *OutputBase::find2(Gringo::Value val) {
         }
     }
     return nullptr;
+}
+std::pair<unsigned, unsigned> OutputBase::simplify(AssignmentLookup assignment) {
+    // TODO: would be nice to have this one in the statistics output
+    handler->simplify(assignment);
+    unsigned facts = 0;
+    unsigned deleted = 0;
+    for (auto &x : domains) {
+        unsigned offset = 0;
+        x.second.indices.clear();
+        x.second.fullIndices.clear();
+        x.second.exports.exports.erase(std::remove_if(x.second.exports.begin(), x.second.exports.end(), [&](Gringo::PredicateDomain::element_type &y) -> bool {
+            y.second.generation(offset);
+            if (y.second.hasUid()) {
+                auto value = assignment(y.second.uid());
+                if (!value.first) {
+                    switch (value.second) {
+                        case TruthValue::True: {
+                            // NOTE: externals cannot become facts here
+                            //       because they might get new definitions while grounding
+                            //       because there is no distinction between true and weak true
+                            //       these definitions might be skipped if a weak true external 
+                            //       is made a fact here
+                            if (!y.second.fact(false)) { ++facts; }
+                            y.second.setFact(true);
+                            break;
+                        }
+                        case TruthValue::False: {
+                            if (offset < x.second.exports.incOffset)  { --x.second.exports.incOffset; }
+                            if (offset < x.second.exports.showOffset) { --x.second.exports.showOffset; }
+                            x.second.domain.erase(y.first);
+                            ++deleted;
+                            return true;
+                        }
+                        default: { break; }
+                    }
+                }
+            }
+            ++offset;
+            return false;
+        }), x.second.exports.end());
+        x.second.exports.generation_     = 0;
+        x.second.exports.nextGeneration_ = x.second.exports.size();
+    }
+    return {facts, deleted};
 }
 
 // }}}
