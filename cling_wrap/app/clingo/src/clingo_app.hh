@@ -19,37 +19,29 @@
 
 // }}}
 
-
-#ifndef CLINGO_APP_H_
-#define CLINGO_APP_H_
+#ifndef _GRINGO_CLINGOAPP_HH
+#define _GRINGO_CLINGOAPP_HH
 
 #include "clasp/clasp_app.h"
 #include "gringo/version.hh"
-#include "grounder.hh"
-
-struct ClingoStatistics : Gringo::Statistics {
-    virtual Quantity    getStat(char const* key) const;
-    virtual char const *getKeys(char const* key) const;
-    virtual ~ClingoStatistics() { }
-
-    Clasp::ClaspFacade *clasp = nullptr;
-};
+#include "clingo/clingocontrol.hh"
 
 // Standalone clingo application.
-class ClingoApp : public Clasp::Cli::ClaspAppBase, public Gringo::Control {
+class ClingoApp : public Clasp::Cli::ClaspAppBase {
     using StringVec   = std::vector<std::string>;
     using Output      = Clasp::Cli::Output;
     using ProblemType = Clasp::ProblemType;
     using BaseType    = Clasp::Cli::ClaspAppBase;
-    enum class ConfigUpdate { KEEP, UPDATE, REPLACE };
+    enum class ConfigUpdate { KEEP, REPLACE };
 public:
     ClingoApp();
     const char* getName()       const { return "clingo"; }
     const char* getVersion()    const { return GRINGO_VERSION; }
     const char* getUsage()      const { return "[number] [options] [files]"; }
+
+    virtual void shutdown();
 protected:
     enum Mode { mode_clingo = 0, mode_clasp = 1, mode_gringo = 2 };
-    Mode mode_;
     virtual void        initOptions(ProgramOptions::OptionContext& root);
     virtual void        validateOptions(const ProgramOptions::OptionContext& root, const ProgramOptions::ParsedOptions& parsed, const ProgramOptions::ParsedValues& vals);
 
@@ -58,43 +50,18 @@ protected:
     virtual Output*     createOutput(ProblemType f);
     virtual void        printHelp(const ProgramOptions::OptionContext& root);
     virtual void        printVersion();
+
     // -------------------------------------------------------------------------------------------
     // Event handler
     virtual void onEvent(const Clasp::Event& ev);
     virtual bool onModel(const Clasp::Solver& s, const Clasp::Model& m);
     // -------------------------------------------------------------------------------------------
-    // Gringo stuff
-    bool    prepare(ModelHandler h);
-    virtual void ground(std::string const &name, Gringo::FWValVec args);
-    virtual void add(std::string const &name, Gringo::FWStringVec const &params, std::string const &part);
-    virtual Gringo::SolveResult solve(ModelHandler h);
-    virtual bool blocked();
-    virtual std::string str();
-    virtual void assignExternal(Gringo::Value ext, bool);
-    virtual void releaseExternal(Gringo::Value ext);
-    virtual Gringo::Value getConst(std::string const &name);
-    virtual ClingoStatistics *getStats();
-    virtual void setConf(std::string const &part, bool replace);
-    virtual void enableEnumAssumption(bool enable);
-    Gringo::SolveFuture *asolve(ModelHandler mh, FinishHandler fh);
-    GringoOptions grOpts_;
-    std::unique_ptr<Grounder>  grd;
 private:
     ClingoApp(const ClingoApp&);
     ClingoApp& operator=(const ClingoApp&);
-    // Gringo stuff
-    friend struct ClingoSolveFuture;
-
-    Gringo::Ground::Parameters params;
-    Gringo::Input::ProgramVec  parts;
-    bool                       enableEnumAssupmption_ = true;
-    ModelHandler               modelHandler;
-    ClingoStatistics           clingoStats;
-    std::string                configStr;
-    ConfigUpdate               configUpdate = ConfigUpdate::KEEP;
-#if WITH_THREADS
-    ClingoSolveFuture          solveFuture_;
-#endif
+    ClingoOptions grOpts_;
+    Mode mode_;
+    std::unique_ptr<ClingoControl> grd;
 };
 
-#endif
+#endif // _GRINGO_CLINGOAPP_HH

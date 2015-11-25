@@ -2,13 +2,16 @@
 
 function main(prg)
     step = 1
-    prg:ground("base", {})
     while true do
+        parts = {}
         if step > 1 then
-            prg:releaseExternal(gringo.Fun("volatile", {step-1}))
+            prg:release_external(gringo.Fun("volatile", {step-1}))
+        else
+            parts[#parts+1] = {"base", {}}
         end
-        prg:ground("cumulative", {step})
-        prg:assignExternal(gringo.Fun("volatile", {step}), true)
+        parts[#parts+1] = {"cumulative", {step}}
+        prg:ground(parts)
+        prg:assign_external(gringo.Fun("volatile", {step}), true)
         ret = prg:solve()
         if ret == gringo.SolveResult.SAT then
             break
@@ -45,7 +48,7 @@ un(clear).
 
 % generic predicates for sorting
 
-sort(I,J) :- sort(I), sort(J), I < J, not sort(K) : sort(K), I < K, K < J.
+sort(I,J) :- sort(I), sort(J), I < J, #false : sort(K), I < K, K < J.
 prec(I,J) :- sort(I,J), not lead(J).
 succ(J)   :- prec(_,J).
 succ(I,J) :- prec(I,J), succ(I).

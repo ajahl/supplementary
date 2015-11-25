@@ -25,7 +25,7 @@ function fun(name, model)
     return Fun(name, model)
 end
 
-function onModel(model)
+function on_model(model)
     models[#models+1] = fun("model", split(model))
     models[#models+1] = fun("shown", normalize(model:atoms(Model.SHOWN)))
     models[#models+1] = fun("atoms", normalize(model:atoms(Model.ATOMS)))
@@ -34,9 +34,9 @@ function onModel(model)
 end
 
 function main(prg)
-    prg:ground("base", {})
-    prg:solve(onModel)
-    prg:ground("result", {})
+    prg:ground({{"base", {}}})
+    prg:solve(nil, on_model)
+    prg:ground({{"result", {}}})
     prg:solve()
 end
 

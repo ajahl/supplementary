@@ -34,7 +34,7 @@ catkin_package(
 
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
- include_directories(include libgringo libgringo/src libprogram_opts libclasp)
+ include_directories(include libgringo libgringo/src libprogram_opts libclasp libclingo)
 
 ### BUILDING GRINGO ###
 if(NOT "${ARCH}" STREQUAL "armv7l")
@@ -67,10 +67,18 @@ endif(NOT "${ARCH}" STREQUAL "armv7l")
 
 ### BUIDLING LIBOPTIONS ###
 if(NOT ${ARCH} STREQUAL "armv7l")
-  file(GLOB_RECURSE libprogram_opts_SOURCES "libprogram_opts/src/*.cpp")
-  add_library(
-    libprogram_opts STATIC ${libprogram_opts_SOURCES}
-  )
+file(GLOB_RECURSE libprogram_opts_SOURCES "libprogram_opts/src/*.cpp")
+add_library(
+libprogram_opts STATIC ${libprogram_opts_SOURCES}
+)
+endif(NOT ${ARCH} STREQUAL "armv7l")
+
+### BUIDLING LIBCLINGO ###
+if(NOT ${ARCH} STREQUAL "armv7l")
+file(GLOB_RECURSE libclingo_SOURCES "libclingo/src/*.cc")
+add_library(
+libclingo STATIC ${libclingo_SOURCES}
+)
 endif(NOT ${ARCH} STREQUAL "armv7l")
 
 ### BUIDLING LIBCLASP ###

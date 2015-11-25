@@ -25,6 +25,7 @@
 #  include <lua.h>
 #endif
 #include <gringo/input/nongroundparser.hh>
+#include <gringo/input/groundtermparser.hh>
 #include <gringo/input/programbuilder.hh>
 #include <gringo/input/program.hh>
 #include <gringo/ground/program.hh>
@@ -33,41 +34,66 @@
 #include <gringo/scripts.hh>
 #include <gringo/version.hh>
 #include <gringo/control.hh>
+#include <climits>
 #include <iostream>
 #include <stdexcept>
 #include <program_opts/application.h>
 #include <program_opts/typed_value.h>
-#include <climits>
 
 struct GringoOptions {
+    using Foobar = std::vector<Gringo::FWSignature>;
 	ProgramOptions::StringSeq   defines;
-    Gringo::Output::LparseDebug lparseDebug     = Gringo::Output::LparseDebug::NONE;
-    bool                        verbose         = false;
-    bool                        text            = false;
-    bool                        lpRewrite       = false;
-    bool                        wNoRedef        = false;
-    bool                        wNoCycle        = false;
-    bool                        wNoTermUndef    = false;
-    bool                        wNoAtomUndef    = false;
-    bool                        wNoNonMonotone  = false;
-    bool                        wNoFileIncluded = false;
+    Gringo::Output::LparseDebug lparseDebug           = Gringo::Output::LparseDebug::NONE;
+    bool                        verbose               = false;
+    bool                        text                  = false;
+    bool                        lpRewrite             = false;
+    bool                        wNoOperationUndefined = false;
+    bool                        wNoAtomUndef          = false;
+    bool                        wNoFileIncluded       = false;
+    bool                        wNoVariableUnbounded  = false;
+    bool                        wNoGlobalVariable     = false;
+    bool                        rewriteMinimize       = false;
+    Foobar foobar;
 };
 
+static inline std::vector<std::string> split(std::string const &source, char const *delimiter = " ", bool keepEmpty = false) {
+    std::vector<std::string> results;
+    size_t prev = 0;
+    size_t next = 0;
+    while ((next = source.find_first_of(delimiter, prev)) != std::string::npos) {
+        if (keepEmpty || (next - prev != 0)) { results.push_back(source.substr(prev, next - prev)); }
+        prev = next + 1;
+    }
+    if (prev < source.size()) { results.push_back(source.substr(prev)); }
+    return results;
+}
+
+static inline bool parseFoobar(const std::string& str, GringoOptions::Foobar& foobar) {
+    for (auto &x : split(str, ",")) {
+        auto y = split(x, "/");
+        if (y.size() != 2) { return false; }
+        unsigned a;
+        if (!bk_lib::string_cast<unsigned>(y[1], a)) { return false; }
+        foobar.emplace_back(y[0], a);
+    }
+    return true;
+}
+
 #define LOG if (opts.verbose) std::cerr
-struct IncrementalControl : Gringo::Control {
+struct IncrementalControl : Gringo::Control, Gringo::GringoModule {
     using StringVec = std::vector<std::string>;
     IncrementalControl(Gringo::Output::OutputBase &out, StringVec const &files, GringoOptions const &opts) 
         : out(out)
-        , pb(scripts, prg, out, defs)
+        , scripts(*this)
+        , pb(scripts, prg, out, defs, opts.rewriteMinimize)
         , parser(pb)
         , opts(opts) {
         using namespace Gringo;
-        if (opts.wNoRedef)        { message_printer()->disable(W_DEFINE_REDEFINTION); }
-        if (opts.wNoCycle)        { message_printer()->disable(W_DEFINE_CYCLIC);  }
-        if (opts.wNoTermUndef)    { message_printer()->disable(W_TERM_UNDEFINED); }
-        if (opts.wNoAtomUndef)    { message_printer()->disable(W_ATOM_UNDEFINED); }
-        if (opts.wNoNonMonotone)  { message_printer()->disable(W_NONMONOTONE_AGGREGATE); }
-        if (opts.wNoFileIncluded) { message_printer()->disable(W_FILE_INCLUDED); }
+        if (opts.wNoOperationUndefined) { message_printer()->disable(W_OPERATION_UNDEFINED); }
+        if (opts.wNoAtomUndef)          { message_printer()->disable(W_ATOM_UNDEFINED); }
+        if (opts.wNoFileIncluded)       { message_printer()->disable(W_FILE_INCLUDED); }
+        if (opts.wNoVariableUnbounded)  { message_printer()->disable(W_VARIABLE_UNBOUNDED); }
+        if (opts.wNoGlobalVariable)     { message_printer()->disable(W_GLOBAL_VARIABLE); }
         for (auto &x : opts.defines) { 
             LOG << "define: " << x << std::endl;
             parser.parseDefine(x);
@@ -80,72 +106,107 @@ struct IncrementalControl : Gringo::Control {
             LOG << "reading from stdin" << std::endl;
             parser.pushFile("-");
         }
-        parser.parse();
-        LOG << "************** parsed program **************" << std::endl << prg;
-        LOG << "*********** extensional database ***********" << std::endl;
-        prg.rewrite(defs);
-        LOG << "************* rewritten program ************" << std::endl << prg;
-        prg.check();
-        if (message_printer()->hasError()) {
-            throw std::runtime_error("grounding stopped because of errors");
+        parse();
+    }
+    void parse() {
+        if (!parser.empty()) {
+            parser.parse();
+            defs.init();
+            parsed = true;
         }
     }
-    
-    virtual void ground(std::string const &name, Gringo::FWValVec args) { params.add(name, args); }
+    virtual void ground(Gringo::Control::GroundVec const &parts, Gringo::Any &&context) { 
+        // NOTE: it would be cool to have assumptions in the lparse output
+        auto exit = Gringo::onExit([this]{ scripts.context = Gringo::Any(); });
+        scripts.context = std::move(context);
+        parse();
+        if (parsed) {
+            LOG << "************** parsed program **************" << std::endl << prg;
+            prg.rewrite(defs);
+            LOG << "************* rewritten program ************" << std::endl << prg;
+            prg.check();
+            if (Gringo::message_printer()->hasError()) {
+                throw std::runtime_error("grounding stopped because of errors");
+            }
+            parsed = false;
+        }
+        if (!grounded) {
+            if (incremental) { out.incremental(); }
+            grounded = true;
+        }
+        if (!parts.empty()) {
+            Gringo::Ground::Parameters params;
+            for (auto &x : parts) { params.add(x.first, x.second); }
+            Gringo::Ground::Program gPrg(prg.toGround(out.domains));
+            LOG << "************* intermediate program *************" << std::endl << gPrg << std::endl;
+            LOG << "*************** grounded program ***************" << std::endl;
+            gPrg.ground(params, scripts, out, false);
+        }
+    }
     virtual void add(std::string const &name, Gringo::FWStringVec const &params, std::string const &part) {
         Gringo::Location loc("<block>", 1, 1, "<block>", 1, 1);
         Gringo::Input::IdVec idVec;
         for (auto &x : params) { idVec.emplace_back(loc, x); }
-        parts.emplace_back(name, std::move(idVec), part);
+        parser.pushBlock(name, std::move(idVec), part);
+        parse();
     }
     virtual Gringo::Value getConst(std::string const &name) {
+        parse();
         auto ret = defs.defs().find(name);
         if (ret != defs.defs().end()) {
-            return std::get<2>(ret->second)->eval();
+            bool undefined = false;
+            Gringo::Value val = std::get<2>(ret->second)->eval(undefined);
+            if (!undefined) { return val; }
         }
         return Gringo::Value();
     }
+    virtual void load(std::string const &filename) {
+        parser.pushFile(std::string(filename));
+        parse();
+    }
     virtual void onModel(Gringo::Model const &) { }
     virtual bool blocked() { return false; }
-    virtual Gringo::SolveResult solve(ModelHandler) { 
-        if (!parts.empty()) {
-            parser.pushBlocks(std::move(parts));
-            parser.parse();
-            parts.clear();
+    virtual Gringo::SolveResult solve(ModelHandler, Assumptions &&ass) {
+        if (!ass.empty()) { std::cerr << "warning: the lparse format does not support assumptions" << std::endl; }
+        if (!grounded) {
+            if (incremental) { out.incremental(); }
         }
-        Gringo::Ground::Program gPrg(prg.toGround(out.domains));
-        LOG << "************* intermediate program *************" << std::endl << gPrg << std::endl;
-        LOG << "*************** grounded program ***************" << std::endl;
-        gPrg.ground(params, scripts, out, false);
-        for (auto &ext : freeze) {
-            Gringo::PredicateDomain::element_type *atm = out.find2(ext.first);
-            if (atm->second.hasUid()) {
-                out.external(*atm, ext.second);
-            }
-        }
+        grounded = false;
         out.finish();
-        freeze.clear();
-        params.clear();
         return Gringo::SolveResult::UNKNOWN;
     }
-    virtual Gringo::SolveFuture *asolve(ModelHandler, FinishHandler) { throw std::runtime_error("solving not supported in gringo"); }
+    virtual Gringo::SolveIter *solveIter(Assumptions &&) { 
+        throw std::runtime_error("solving not supported in gringo");
+    }
+    virtual Gringo::SolveFuture *solveAsync(ModelHandler, FinishHandler, Assumptions &&) { throw std::runtime_error("solving not supported in gringo"); }
     virtual Gringo::Statistics *getStats() { throw std::runtime_error("statistics not supported in gringo (yet)"); }
-    virtual void assignExternal(Gringo::Value ext, bool val) { freeze.emplace_back(ext, val ? Gringo::Output::ExternalType::E_TRUE : Gringo::Output::ExternalType::E_FALSE); }
-    virtual void releaseExternal(Gringo::Value ext)          { freeze.emplace_back(ext, Gringo::Output::ExternalType::E_FREE); }
-    virtual void setConf(std::string const &, bool) { }
-    virtual void enableEnumAssumption(bool) { }
+    virtual void assignExternal(Gringo::Value ext, Gringo::TruthValue val) { 
+        Gringo::PredicateDomain::element_type *atm = out.find2(ext);
+        if (atm && atm->second.hasUid()) {
+            out.assignExternal(*atm, val);
+        }
+    }
+    virtual Gringo::DomainProxy &getDomain() { throw std::runtime_error("domain introspection not supported"); }
+    virtual Gringo::ConfigProxy &getConf() { throw std::runtime_error("configuration not supported"); }
+    virtual void useEnumAssumption(bool) { }
+    virtual bool useEnumAssumption() { return false; }
     virtual ~IncrementalControl() { }
+    virtual Gringo::Value parseValue(std::string const &str) { return termParser.parse(str); }
+    virtual Control *newControl(int, char const **) { throw std::logic_error("creating new control instances not supported in gringo"); }
+    virtual void freeControl(Control *) { }
+    virtual void cleanupDomains() { }
 
-    std::vector<std::pair<Gringo::Value, Gringo::Output::ExternalType>> freeze;
+    Gringo::Input::GroundTermParser        termParser;
     Gringo::Output::OutputBase            &out;
     Gringo::Scripts                        scripts;
     Gringo::Defines                        defs;
     Gringo::Input::Program                 prg;
     Gringo::Input::NongroundProgramBuilder pb;
     Gringo::Input::NonGroundParser         parser;
-    Gringo::Ground::Parameters             params;
-    Gringo::Input::ProgramVec              parts;
     GringoOptions const                   &opts;
+    bool                                   parsed = false;
+    bool                                   grounded = false;
+    bool                                   incremental = false;
 };
 #undef LOG
 
@@ -155,18 +216,16 @@ static bool parseConst(const std::string& str, std::vector<std::string>& out) {
 }
 
 static bool parseWarning(const std::string& str, GringoOptions& out) {
-    if (str == "no-atom-undefined")        { out.wNoAtomUndef    = true;  return true; }
-    if (str ==    "atom-undefined")        { out.wNoAtomUndef    = false; return true; }
-    if (str == "no-define-cyclic")         { out.wNoCycle        = true;  return true; }
-    if (str ==    "define-cyclic")         { out.wNoCycle        = false; return true; }
-    if (str == "no-define-redfinition")    { out.wNoRedef        = true;  return true; }
-    if (str ==    "define-redfinition")    { out.wNoRedef        = false; return true; }
-    if (str == "no-file-included")         { out.wNoFileIncluded = true;  return true; }
-    if (str ==    "file-included")         { out.wNoFileIncluded = false; return true; }
-    if (str == "no-nonmonotone-aggregate") { out.wNoNonMonotone  = true;  return true; }
-    if (str ==    "nonmonotone-aggregate") { out.wNoNonMonotone  = false; return true; }
-    if (str == "no-term-undefined")        { out.wNoTermUndef    = true;  return true; }
-    if (str ==    "term-undefined")        { out.wNoTermUndef    = false; return true; }
+    if (str == "no-atom-undefined")      { out.wNoAtomUndef          = true;  return true; }
+    if (str ==    "atom-undefined")      { out.wNoAtomUndef          = false; return true; }
+    if (str == "no-file-included")       { out.wNoFileIncluded       = true;  return true; }
+    if (str ==    "file-included")       { out.wNoFileIncluded       = false; return true; }
+    if (str == "no-operation-undefined") { out.wNoOperationUndefined = true;  return true; }
+    if (str ==    "operation-undefined") { out.wNoOperationUndefined = false; return true; }
+    if (str == "no-variable-unbounded")  { out.wNoVariableUnbounded  = true;  return true; }
+    if (str ==    "variable-unbounded")  { out.wNoVariableUnbounded  = false; return true; }
+    if (str == "no-global-variable")     { out.wNoGlobalVariable     = true;  return true; }
+    if (str ==    "global-variable")     { out.wNoGlobalVariable     = false; return true; }
     return false;
 }
 
@@ -195,11 +254,12 @@ protected:
              "      all   : combines plain and lparse\n")
             ("warn,W"                   , storeTo(grOpts_, parseWarning)->arg("<warn>")->composing(), "Enable/disable warnings:\n"
              "      [no-]atom-undefined:        a :- b.\n"
-             "      [no-]define-cyclic:         #const a=b. #const b=a.\n"
-             "      [no-]define-redfinition:    #const a=1. #const a=2.\n"
              "      [no-]file-included:         #include \"a.lp\". #include \"a.lp\".\n"
-             "      [no-]nonmonotone-aggregate: a :- #sum { 1:a; -1:a } >= 0.\n"
-             "      [no-]term-undefined       : p(1/0).\n")
+             "      [no-]operation-undefined:   p(1/0).\n"
+             "      [no-]variable-unbounded:    $x > 10.\n"
+             "      [no-]global-variable:       :- #count { X } = 1, X = 1.\n")
+            ("rewrite-minimize"         , flag(grOpts_.rewriteMinimize = false), "Rewrite minimize constraints into rules")
+            ("foobar,@4"                , storeTo(grOpts_.foobar, parseFoobar), "Foobar")
             ;
         root.add(gringo);
         OptionGroup basic("Basic Options");
@@ -253,12 +313,14 @@ protected:
         using namespace Gringo;
         IncrementalControl inc(out, input_, grOpts_);
         if (inc.scripts.callable("main")) { 
-            out.incremental();
+            inc.incremental = true;
             inc.scripts.main(inc);
         }
         else { 
-            inc.params.add("base", {});
-            inc.solve(nullptr);
+            Gringo::Control::GroundVec parts;
+            parts.emplace_back("base", FWValVec{});
+            inc.ground(parts, Gringo::Any());
+            inc.solve(nullptr, {});
         }
     }
 
@@ -266,6 +328,9 @@ protected:
         using namespace Gringo;
         grOpts_.verbose = verbose() == UINT_MAX;
         Output::OutputPredicates outPreds;
+        for (auto &x : grOpts_.foobar) {
+            outPreds.emplace_back(Location("<cmd>",1,1,"<cmd>", 1,1), x, false);
+        }
         if (grOpts_.text) {
             Output::OutputBase out(std::move(outPreds), std::cout, grOpts_.lpRewrite);
             ground(out);

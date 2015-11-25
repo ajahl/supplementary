@@ -131,63 +131,78 @@ target(0,t) :- change(1,0,t), not change(-1,0,t).
 #script (lua)
 
 function main(prg)
-	prg:ground("init", {1,0})
-	prg:ground("state", {1,0})
+    parts = {}
+    parts[#parts+1] = {"init", {1, 0}}
+    parts[#parts+1] = {"state", {1, 0}}
+    prg:cleanup_domains()
+    prg:ground(parts)
 	prg:solve()
 
-	prg:ground("base_2", {})
-	prg:ground("init", {2,0})
-	prg:ground("state", {2,0})
+    parts = {}
+    parts[#parts+1] = {"base_2", {}}
+    parts[#parts+1] = {"init", {2,0}}
+    parts[#parts+1] = {"state", {2,0}}
 	for i=1,2 do
-		prg:ground("table", {i})
+        parts[#parts+1] = {"table", {i}}
 		for j=1,2 do
-            prg:ground("state", {j,i})
-		    prg:ground("move", {j,i})
+            parts[#parts+1] = {"state", {j,i}}
+		    parts[#parts+1] = {"move", {j,i}}
         end
     end
+    prg:cleanup_domains()
+    prg:ground(parts)
 	prg:solve()
 
-	prg:ground("base_3", {})
-	prg:ground("init", {3,0})
-	prg:ground("state", {3,0})
+    parts = {}
+	parts[#parts+1] = {"base_3", {}}
+	parts[#parts+1] = {"init", {3,0}}
+	parts[#parts+1] = {"state", {3,0}}
 	for i=1,3 do
-		prg:ground("state", {3,i})
-		prg:ground("move", {3,i})
+		parts[#parts+1] = {"state", {3,i}}
+		parts[#parts+1] = {"move", {3,i}}
     end
 	for j=1,2 do
-		prg:ground("state", {j,3})
-		prg:ground("move", {j,3})
+		parts[#parts+1] = {"state", {j,3}}
+		parts[#parts+1] = {"move", {j,3}}
     end
-	prg:ground("table", {3})
+	parts[#parts+1] = {"table", {3}}
+    prg:cleanup_domains()
+    prg:ground(parts)
 	prg:solve()
 
-	prg:ground("base_4", {})
-	prg:ground("init", {4,0})
-	prg:ground("state", {4,0})
+    parts = {}
+	parts[#parts+1] = {"base_4", {}}
+	parts[#parts+1] = {"init", {4,0}}
+	parts[#parts+1] = {"state", {4,0}}
 	for i=1, 4 do
-		prg:ground("state", {4,i})
-		prg:ground("move", {4,i})
+		parts[#parts+1] = {"state", {4,i}}
+		parts[#parts+1] = {"move", {4,i}}
     end
 	for j = 1, 3 do
-		prg:ground("state", {j,4})
-		prg:ground("move", {j,4})
+		parts[#parts+1] = {"state", {j,4}}
+		parts[#parts+1] = {"move", {j,4}}
     end
-	prg:ground("table", {4})
+	parts[#parts+1] = {"table", {4}}
+    prg:cleanup_domains()
+    prg:ground(parts)
 	prg:solve()
 
-	prg:ground("base_5", {})
-	prg:ground("init", {5,1})
+    parts = {}
+	parts[#parts+1] = {"base_5", {}}
+	parts[#parts+1] = {"init", {5,1}}
 	for i=1, 7 do
-		prg:ground("state", {5,i})
-		prg:ground("move", {5,i})
+		parts[#parts+1] = {"state", {5,i}}
+		parts[#parts+1] = {"move", {5,i}}
     end
 	for i=5, 7 do
-		prg:ground("table", {i})
+		parts[#parts+1] = {"table", {i}}
 		for j=1, 4 do
-			prg:ground("state", {j,i})
-			prg:ground("move", {j,i})
+			parts[#parts+1] = {"state", {j,i}}
+			parts[#parts+1] = {"move", {j,i}}
         end
     end
+    prg:cleanup_domains()
+    prg:ground(parts)
 	prg:solve()
 end
 #end.

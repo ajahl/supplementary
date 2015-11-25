@@ -131,55 +131,65 @@ target(0,t) :- change(1,0,t), not change(-1,0,t).
 #script (python)
 
 def main(prg):
-	prg.ground("init", [1,0])
-	prg.ground("state", [1,0])
-	prg.solve()
+    parts = []
+    parts.append(("init", [1,0]))
+    parts.append(("state", [1,0]))
+    prg.ground(parts)
+    prg.solve()
 
-	prg.ground("base_2", [])
-	prg.ground("init", [2,0])
-	prg.ground("state", [2,0])
-	for i in range(1, 3):
-		prg.ground("table", [i])
-		for j in range(1, 3):
-		    prg.ground("state", [j,i])
-		    prg.ground("move", [j,i])
-	prg.solve()
+    parts = []
+    parts.append(("base_2", []))
+    parts.append(("init", [2,0]))
+    parts.append(("state", [2,0]))
+    for i in range(1, 3):
+        parts.append(("table", [i]))
+        for j in range(1, 3):
+            parts.append(("state", [j,i]))
+            parts.append(("move", [j,i]))
+    prg.ground(parts)
+    prg.solve()
 
-	prg.ground("base_3", [])
-	prg.ground("init", [3,0])
-	prg.ground("state", [3,0])
-	for i in range(1, 4):
-		prg.ground("state", [3,i])
-		prg.ground("move", [3,i])
-	for j in range(1, 3):
-		prg.ground("state", [j,3])
-		prg.ground("move", [j,3])
-	prg.ground("table", [3])
-	prg.solve()
+    parts = []
+    parts.append(("base_3", []))
+    parts.append(("init", [3,0]))
+    parts.append(("state", [3,0]))
+    for i in range(1, 4):
+        parts.append(("state", [3,i]))
+        parts.append(("move", [3,i]))
+    for j in range(1, 3):
+        parts.append(("state", [j,3]))
+        parts.append(("move", [j,3]))
+    parts.append(("table", [3]))
+    prg.ground(parts)
+    prg.solve()
 
-	prg.ground("base_4", [])
-	prg.ground("init", [4,0])
-	prg.ground("state", [4,0])
-	for i in range(1, 5):
-		prg.ground("state", [4,i])
-		prg.ground("move", [4,i])
-	for j in range(1, 4):
-		prg.ground("state", [j,4])
-		prg.ground("move", [j,4])
-	prg.ground("table", [4])
-	prg.solve()
+    parts = []
+    parts.append(("base_4", []))
+    parts.append(("init", [4,0]))
+    parts.append(("state", [4,0]))
+    for i in range(1, 5):
+        parts.append(("state", [4,i]))
+        parts.append(("move", [4,i]))
+    for j in range(1, 4):
+        parts.append(("state", [j,4]))
+        parts.append(("move", [j,4]))
+    parts.append(("table", [4]))
+    prg.ground(parts)
+    prg.solve()
 
-	prg.ground("base_5", [])
-	prg.ground("init", [5,1])
-	for i in range(1, 8):
-		prg.ground("state", [5,i])
-		prg.ground("move", [5,i])
-	for i in range(5, 8):
-		prg.ground("table", [i])
-		for j in range(1, 5):
-			prg.ground("state", [j,i])
-			prg.ground("move", [j,i])
-	prg.solve()
+    parts = []
+    parts.append(("base_5", []))
+    parts.append(("init", [5,1]))
+    for i in range(1, 8):
+        parts.append(("state", [5,i]))
+        parts.append(("move", [5,i]))
+    for i in range(5, 8):
+        parts.append(("table", [i]))
+        for j in range(1, 5):
+            parts.append(("state", [j,i]))
+            parts.append(("move", [j,i]))
+    prg.ground(parts)
+    prg.solve()
 #end.
 
 #program base_2.

@@ -50,4 +50,5 @@ Step: 4
 x=-1
 x=0
 x=1
+Step: 5
 UNSAT

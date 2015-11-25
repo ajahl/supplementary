@@ -1,31 +1,41 @@
 #script (python)
 
 import gringo
+import sys
 
-def onModel(x):
-    print("Answer: 42")
-    print(
+def writeln(s):
+    sys.stdout.write(str(s))
+    sys.stdout.write("\n")
+    sys.stdout.flush()
+
+def on_model(x):
+    writeln("Answer: 42")
+    writeln(
           "hasA(" +        str(x.contains(gringo.Fun("a"))).lower() + ") "
         + "hasVolatile(" + str(x.contains(gringo.Fun("volatile", [9]))).lower() + ") "
         + "model(" +       ",".join(sorted(map(str, x.atoms()))) + ") ")
 
-def onFinish(ret, interrupted):
-    print("Answer: 42")
-    print(str(ret) + "_" + str(interrupted).lower())
+def on_finish(ret, canceled):
+    writeln("Answer: 42")
+    writeln(str(ret) + "_" + str(canceled).lower())
 
 def main (prg):
-    n = prg.getConst("n")
-    prg.ground("base", [])
+    n = prg.get_const("n")
+    parts = []
+    parts.append(("base", []))
+    prg.ground(parts)
     prg.solve()
     prg.add("test", ["x"], "test(x).")
-    prg.ground("test", [gringo.Fun("f", [1,2])])
+    parts.append(("test", [gringo.Fun("f", [1,2])]))
     for i in range(1,n+1):
-        prg.ground("cumulative", [i])
-        f = prg.asolve(onModel, onFinish)
+        parts.append(("cumulative", [i]))
+        prg.ground(parts)
+        parts = []
+        f = prg.solve_async(None, on_model, on_finish)
         f.wait(0)
         ret = f.get()
-        print("Answer: 42")
-        print(ret)
+        writeln("Answer: 42")
+        writeln(ret)
 
 #end.
 

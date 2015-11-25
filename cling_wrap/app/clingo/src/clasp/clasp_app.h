@@ -150,20 +150,16 @@ protected:
 	void printDefaultConfigs()              const;
 	void printLibClaspVersion()             const;
 	std::istream&   getStream();
-	bool            updateConfig(const std::string& solvingOptions, bool resetConfig = false);
 	// -------------------------------------------------------------------------------------------  
 	// Functions called in handlePreSolveOptions()
 	void readLemmas(SharedContext& ctx);
 	void writeNonHcfs(const SharedDependencyGraph& graph) const;
 	typedef SingleOwnerPtr<Output>              OutPtr;
 	typedef SingleOwnerPtr<ClaspFacade>         ClaspPtr;
-	typedef std::pair<std::string, std::string> ArgVal;
-	typedef std::vector<ArgVal>                 ArgVec;
-	ArgVec           argVec_;
-	ClaspCliConfig   claspConfig_;
-	ClaspAppOptions  claspAppOpts_;
-	ClaspPtr         clasp_;
-	OutPtr           out_;
+	ClaspCliConfig  claspConfig_;
+	ClaspAppOptions claspAppOpts_;
+	ClaspPtr        clasp_;
+	OutPtr          out_;
 };
 /////////////////////////////////////////////////////////////////////////////////////////
 // clasp application
@@ -174,12 +170,15 @@ public:
 	ClaspApp();
 	const char* getName()       const { return "clasp"; }
 	const char* getVersion()    const { return CLASP_VERSION; }
-	const char* getUsage()      const { return "[number] [options] [file]"; }
+	const char* getUsage()      const { 
+		return 
+			"[number] [options] [file]\n"
+			"Compute at most <number> models (0=all) of the instance given in <file>"; 
+	}
 protected:
-	virtual ProblemType   getProblemType();
-	virtual void          run(ClaspFacade& clasp);
-	virtual void          printHelp(const ProgramOptions::OptionContext& root);
-	virtual void          storeCommandArgs(const ProgramOptions::ParsedValues&);
+	virtual ProblemType getProblemType();
+	virtual void        run(ClaspFacade& clasp);
+	virtual void        printHelp(const ProgramOptions::OptionContext& root);
 private:
 	ClaspApp(const ClaspApp&);
 	ClaspApp& operator=(const ClaspApp&);

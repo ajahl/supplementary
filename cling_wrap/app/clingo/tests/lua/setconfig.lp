@@ -1,13 +1,13 @@
 #script (lua)
 
 function main(prg)
-    prg:ground("step1", {})
-    prg:assignExternal(gringo.Fun("f"), true)
-    prg:setConf("-n 1")
+    prg:ground({{"step1", {}}})
+    prg:assign_external(gringo.Fun("f"), true)
+    prg.conf.solve.models = 1
     prg:solve()
-    prg:ground("step2", {})
-    prg:assignExternal(gringo.Fun("f"), false)
-    prg:setConf("-n 0")
+    prg:ground({{"step2", {}}})
+    prg:assign_external(gringo.Fun("f"), false)
+    prg.conf.solve.models = 0
     prg:solve()
 end
 

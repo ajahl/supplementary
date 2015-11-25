@@ -2,6 +2,7 @@
 
 import gringo
 from gringo import Fun, Model
+import sys
 
 models = []
 
@@ -9,7 +10,12 @@ def getModels():
     return models
 
 def normalize(terms):
-    return sorted(terms, gringo.cmp)
+    major = sys.version_info[0]
+    if major >= 3:
+        import functools
+        return sorted(terms, key=functools.cmp_to_key(gringo.cmp))
+    else:
+        return sorted(terms, gringo.cmp)
 
 def split(model):
     return sorted(str(model).split(" "))
@@ -17,7 +23,7 @@ def split(model):
 def fun(name, model):
     return Fun(name, model) if len(model) > 0 else Fun(name)
 
-def onModel(model):
+def on_model(model):
     models.append(fun("model", split(model)))
     models.append(fun("shown", normalize(model.atoms(Model.SHOWN))))
     models.append(fun("atoms", normalize(model.atoms(Model.ATOMS))))
@@ -25,9 +31,9 @@ def onModel(model):
     models.append(fun("csp",   normalize(model.atoms(Model.CSP))))
 
 def main(prg):
-    prg.ground("base", [])
-    prg.solve(onModel)
-    prg.ground("result", [])
+    prg.ground([("base", [])])
+    prg.solve(None, on_model)
+    prg.ground([("result", [])])
     prg.solve()
 
 #end.

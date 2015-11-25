@@ -1,14 +1,14 @@
 #script (lua) 
 
 function main(prg)
-    prg:ground("pigeon", {})
+    prg:ground({{"pigeon", {}}})
     for i=1,2 do
-        prg:assignExternal(gringo.Fun("p"), true)
+        prg:assign_external(gringo.Fun("p"), true)
         prg:solve()
-        prg:assignExternal(gringo.Fun("p"), false)
-        f = prg:asolve()
+        prg:assign_external(gringo.Fun("p"), false)
+        f = prg:solve_async()
         f:wait(0.01)
-        f:interrupt()
+        f:cancel()
     end
 end
 

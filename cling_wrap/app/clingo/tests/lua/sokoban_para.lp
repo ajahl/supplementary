@@ -2,15 +2,19 @@
 
 function main(prg)
     step = 1
-    prg:ground("base", {})
     while true do
+        parts = {}
         if step > 1 then
-            prg:releaseExternal(gringo.Fun("volatile", {step-1}))
+            prg:release_external(gringo.Fun("volatile", {step-1}))
+            prg:cleanup_domains()
+        else
+            parts[#parts+1] = {"base", {}}
         end
-        prg:ground("cumulative", {step})
-        prg:assignExternal(gringo.Fun("volatile", {step}), true)
+        parts[#parts+1] = {"cumulative", {step}}
+        prg:ground(parts)
+        prg:assign_external(gringo.Fun("volatile", {step}), true)
         ret = prg:solve()
-        if ret == gringo.SolveResult.SAT or step == 10 then
+        if ret == gringo.SolveResult.SAT then
             break
         end
         step = step + 1

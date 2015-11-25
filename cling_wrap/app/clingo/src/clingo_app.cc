@@ -35,44 +35,12 @@ using namespace Clasp::Cli;
 
 // {{{ declaration of ClingoApp
 
-Gringo::Statistics::Quantity ClingoStatistics::getStat(char const* key) const {
-    if (!clasp) { return std::numeric_limits<double>::quiet_NaN(); }
-    auto ret = clasp->getStat(key);
-    switch (ret.error()) {
-        case Clasp::ExpectedQuantity::error_ambiguous_quantity: { return Gringo::Statistics::error_ambiguous_quantity; }
-        case Clasp::ExpectedQuantity::error_not_available:      { return Gringo::Statistics::error_not_available; }
-        case Clasp::ExpectedQuantity::error_unknown_quantity:   { return Gringo::Statistics::error_unknown_quantity; }
-        case Clasp::ExpectedQuantity::error_none:               { return (double)ret; }
-    }
-    return std::numeric_limits<double>::quiet_NaN();
-}
-char const *ClingoStatistics::getKeys(char const* key) const {
-    if (!clasp) { return ""; }
-    return clasp->getKeys(key);
-}
-
 ClingoApp::ClingoApp() {
 }
 
 static bool parseConst(const std::string& str, std::vector<std::string>& out) {
-	out.push_back(str);
-	return true;
-}
-
-static bool parseWarning(const std::string& str, GringoOptions& out) {
-    if (str == "no-atom-undefined")        { out.wNoAtomUndef    = true;  return true; }
-    if (str ==    "atom-undefined")        { out.wNoAtomUndef    = false; return true; }
-    if (str == "no-define-cyclic")         { out.wNoCycle        = true;  return true; }
-    if (str ==    "define-cyclic")         { out.wNoCycle        = false; return true; }
-    if (str == "no-define-redfinition")    { out.wNoRedef        = true;  return true; }
-    if (str ==    "define-redfinition")    { out.wNoRedef        = false; return true; }
-    if (str == "no-file-included")         { out.wNoFileIncluded = true;  return true; }
-    if (str ==    "file-included")         { out.wNoFileIncluded = false; return true; }
-    if (str == "no-nonmonotone-aggregate") { out.wNoNonMonotone  = true;  return true; }
-    if (str ==    "nonmonotone-aggregate") { out.wNoNonMonotone  = false; return true; }
-    if (str == "no-term-undefined")        { out.wNoTermUndef    = true;  return true; }
-    if (str ==    "term-undefined")        { out.wNoTermUndef    = false; return true; }
-    return false;
+    out.push_back(str);
+    return true;
 }
 
 void ClingoApp::initOptions(ProgramOptions::OptionContext& root) {
@@ -96,11 +64,12 @@ void ClingoApp::initOptions(ProgramOptions::OptionContext& root) {
          "      all   : combines plain and lparse\n")
         ("warn,W"                   , storeTo(grOpts_, parseWarning)->arg("<warn>")->composing(), "Enable/disable warnings:\n"
          "      [no-]atom-undefined:        a :- b.\n"
-         "      [no-]define-cyclic:         #const a=b. #const b=a.\n"
-         "      [no-]define-redfinition:    #const a=1. #const a=2.\n"
          "      [no-]file-included:         #include \"a.lp\". #include \"a.lp\".\n"
-         "      [no-]nonmonotone-aggregate: a :- #sum { 1:a; -1:a } >= 0.\n"
-         "      [no-]term-undefined       : p(1/0).\n")
+         "      [no-]operation-undefined:   p(1/0).\n"
+         "      [no-]variable-unbounded:    $x > 10.\n"
+         "      [no-]global-variable:       :- #count { X } = 1, X = 1.\n")
+        ("rewrite-minimize"         , flag(grOpts_.rewriteMinimize = false), "Rewrite minimize constraints into rules")
+        ("foobar,@4"                , storeTo(grOpts_.foobar, parseFoobar) , "Foobar")
         ;
     root.add(gringo);
 
@@ -128,7 +97,6 @@ Output* ClingoApp::createOutput(ProblemType f) {
     if (mode_ == mode_gringo) return 0;
     return BaseType::createOutput(f);
 }
-
 
 void ClingoApp::printHelp(const ProgramOptions::OptionContext& root) {
     BaseType::printHelp(root);
@@ -161,140 +129,44 @@ void ClingoApp::printVersion() {
     printf("\n");   
     BaseType::printLibClaspVersion();
 }
-namespace {
-
-struct ClingoModel : Gringo::Model {
-    ClingoModel(Clasp::Asp::LogicProgram const &lp, Gringo::Output::OutputBase const &out, Clasp::Model const &model) 
-        : lp(lp)
-        , out(out)
-        , model(model) { }
-    virtual bool contains(Gringo::Value atom) const {
-        auto atm = out.find(atom);
-        return atm && model.isTrue(lp.getLiteral(atm->uid()));
-    }
-    virtual Gringo::ValVec atoms(int atomset) const {
-        return out.atoms(atomset, [this](unsigned uid) { return model.isTrue(lp.getLiteral(uid)); });
-    }
-    virtual Gringo::Int64Vec optimization() const {
-        Gringo::Int64Vec values;
-        if (model.costs) {
-            for (unsigned level = 0, n = model.costs->numRules(); level < n; ++level) {
-                values.emplace_back(model.costs->optimum(level));
-            }
-        }
-        return values;
-    }
-    virtual ~ClingoModel() { }
-    Clasp::Asp::LogicProgram const   &lp;
-    Gringo::Output::OutputBase const &out;
-    Clasp::Model const               &model;
-};
-
-} // namespace
 bool ClingoApp::onModel(Clasp::Solver const& s, Clasp::Model const& m) {
-    bool ret = !modelHandler || modelHandler(ClingoModel(static_cast<Clasp::Asp::LogicProgram&>(*clasp_->program()), *grd->out, m));
+    bool ret = !grd || grd->onModel(m);
     return BaseType::onModel(s, m) && ret;
 }
-Gringo::Value ClingoApp::getConst(std::string const &name) {
-    auto ret = grd->defs.defs().find(name);
-    return ret != grd->defs.defs().end()
-        ? std::get<2>(ret->second)->eval()
-        : Gringo::Value();
-}
-
-void ClingoApp::ground(std::string const &name, Gringo::FWValVec args) {
-    params.add(name, args);
-}
-void ClingoApp::add(std::string const &name, Gringo::FWStringVec const &params, std::string const &part) {
-    Gringo::Location loc("<block>", 1, 1, "<block>", 1, 1);
-    Gringo::Input::IdVec idVec;
-    for (auto &x : params) { idVec.emplace_back(loc, x); }
-    parts.emplace_back(name, std::move(idVec), part);
-}
-void ClingoApp::setConf(std::string const &part, bool replace) {
-    configStr    = part;
-    configUpdate = replace ? ConfigUpdate::REPLACE : ConfigUpdate::UPDATE;
-}
-bool ClingoApp::prepare(ModelHandler h) {
-    modelHandler = h;
-    if (!clasp_->program()) { return false; }
-    if (configUpdate != ConfigUpdate::KEEP) { 
-        ClaspAppBase::updateConfig(configStr, configUpdate == ConfigUpdate::REPLACE);
-    }
-    Asp::LogicProgram& prg = static_cast<Asp::LogicProgram&>(clasp_->update(configUpdate != ConfigUpdate::KEEP));
-    configUpdate = ConfigUpdate::KEEP;
-    if (!prg.ok()) { return false; }
-    grd->ground(params, parts);
-    if (!grd->lpOut || grd->lpOut->disposeMinimize()) { prg.disposeMinimizeConstraint(); }
-    //if (grOpts_.text) { exit(EXIT_SUCCESS); }
-    if (!handlePostGroundOptions(prg)) { return false; }
-    return clasp_->prepare(enableEnumAssupmption_ ? ClaspFacade::enum_volatile : ClaspFacade::enum_static) && handlePreSolveOptions(*clasp_);
-}
-Gringo::SolveFuture *ClingoApp::asolve(ModelHandler mh, FinishHandler fh) {
+void ClingoApp::shutdown() {
+    // TODO: can be removed in future...
+    //       or could be bound differently given the new interface...
 #if WITH_THREADS
-    prepare(mh);
-    solveFuture_.reset(fh);
-    solveFuture_.reset(clasp_->solveAsync());
-    return &solveFuture_;
-#else
-    (void)mh;
-    (void)fh;
-    throw std::runtime_error("asolve requires clingo to be build with thread support");
+    if (grd) {
+        grd->solveIter_   = nullptr;
+        grd->solveFuture_ = nullptr;
+    }
 #endif
-}
-bool ClingoApp::blocked() {
-    return clasp_->solving();
+    Clasp::Cli::ClaspAppBase::shutdown();
 }
 void ClingoApp::onEvent(Event const& ev) {
 #if WITH_THREADS
     Clasp::ClaspFacade::StepReady const *r = Clasp::event_cast<Clasp::ClaspFacade::StepReady>(ev);
-    if (r) {
-        solveFuture_.ready(r->summary->result);
-    }
+    if (r && grd) { grd->onFinish(r->summary->result); }
 #endif
     BaseType::onEvent(ev);
 }
-Gringo::SolveResult ClingoApp::solve(ModelHandler h) {
-    if (!prepare(h)) { return convert(clasp_->result()); }
-    return convert(clasp_->solve());
-}
-std::string ClingoApp::str() {
-    return "[object:IncrementalControl]";
-}
-void ClingoApp::assignExternal(Gringo::Value ext, bool val) {
-    grd->freeze.emplace_back(ext, val ? Gringo::Output::ExternalType::E_TRUE : Gringo::Output::ExternalType::E_FALSE);
-}
-void ClingoApp::releaseExternal(Gringo::Value ext) {
-    grd->freeze.emplace_back(ext, Gringo::Output::ExternalType::E_FREE);
-}
-
-ClingoStatistics *ClingoApp::getStats() {
-    clingoStats.clasp = clasp_.get();
-    return &clingoStats;
-}
-void ClingoApp::enableEnumAssumption(bool enable) {
-    enableEnumAssupmption_ = enable;
-}
-
 void ClingoApp::run(Clasp::ClaspFacade& clasp) {
-    bool incremental    = mode_ != mode_clasp;
-    ProblemType     pt  = getProblemType();
-    ProgramBuilder* prg = &clasp.start(claspConfig_, pt, incremental);
-    if (incremental) {
+    using namespace std::placeholders;
+    if (mode_ != mode_clasp) {
+        ProblemType     pt  = getProblemType();
+        ProgramBuilder* prg = &clasp.start(claspConfig_, pt);
         grOpts_.verbose = verbose() == UINT_MAX;
         Asp::LogicProgram* lp = mode_ != mode_gringo ? static_cast<Asp::LogicProgram*>(prg) : 0;
-        grd = Gringo::make_unique<Grounder>();
+        DefaultGringoModule module;
+        grd = Gringo::gringo_make_unique<ClingoControl>(module, mode_ == mode_clingo, clasp_.get(), claspConfig_, std::bind(&ClingoApp::handlePostGroundOptions, this, _1), std::bind(&ClingoApp::handlePreSolveOptions, this, _1));
         grd->parse(claspAppOpts_.input, grOpts_, lp);
-        grd->main(*this);
+        grd->main();
     }
-    else if (prg->parseProgram(getStream()) && handlePostGroundOptions(*prg)) {
-        if (clasp.prepare() && handlePreSolveOptions(clasp)) {
-            clasp.solve();
-        }
+    else {
+        ClaspAppBase::run(clasp);
     }
 }
-
-
 
 // }}}
 

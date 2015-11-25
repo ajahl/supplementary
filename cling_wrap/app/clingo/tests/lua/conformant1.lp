@@ -3,22 +3,28 @@ function main(prg)
     local step   = 0
     local check  = false
     while true do
+        parts = {}
         if step > 0 then
-            prg:ground("trans", {step})
-            prg:releaseExternal(gringo.Fun("vol", {step-1}))
+            parts[#parts+1] = {"step", {step}}
         else
-            prg:ground("base", {})
+            parts[#parts+1] = {"base", {}}
         end
-        prg:ground("state", {step})
+        parts[#parts+1] = {"state", {step}}
         if check then
-            prg:ground("check", {step})
+            parts[#parts+1] = {"check", {step}}
         end
-        prg:assignExternal(gringo.Fun("vol", {step}), true)
+        prg:release_external(gringo.Fun("vol", {step-1}))
+        prg:cleanup_domains()
+        prg:ground(parts)
+        prg:assign_external(gringo.Fun("vol", {step}), true)
         local ret = prg:solve()
         if ret == gringo.SolveResult.SAT then
-            if not check and prg:getConst("nocheck") == nil then
+            if not check and prg:get_const("nocheck") == nil then
                 check = true
-                prg:ground("check", {step})
+                parts = {}
+                parts[#parts+1] = {"check", {step}}
+                prg:cleanup_domains()
+                prg:ground(parts)
                 ret = prg:solve()
                 if ret == gringo.SolveResult.SAT then
                     break
@@ -51,7 +57,7 @@ fluent(neg(F),F) :- fluent(F).
 contradict(F)  :- complement(F,L,M), effect(A,L,N1), effect(A,M,N2),
                   #false : condition(A,M,N1), condition(A,L,N2), complement(L,M).
 
-{ holds(F,0) } :- complement(F,L,M), not initially(L;M).
+{ holds(F,0) } :- complement(F,L,M), not initially(L), not initially(M).
   holds(F,0)   :- initially(L), complement(F,L,M).
 
 holds_oneof(N,B)  :- 
@@ -64,7 +70,7 @@ holds_oneof(N,B)  :-
  :- not holds(F,0), initially_oneof(N,M,B), not holds_oneof(N,B), complement(F,L,M).
  :-     holds(F,0), initially_oneof(N,L,B), not holds_oneof(N,B), complement(F,L,M).
 
-#program trans(t).
+#program step(t).
 
 1 { occurs(A,t) : action(A) } 1.
  :- occurs(A,t), executable(A,L), not holds(F,t-1), complement(F,L,M).
@@ -72,14 +78,14 @@ holds_oneof(N,B)  :-
 
 holds(L,t) :- occurs(A,t), effect(A,L,N), holds(C,t-1) : condition(A,C,N).
 holds(L,t) :- holds(L,t-1), complement(L,M), not holds(M,t).
- :- contradict(F), complement(F,L,M), holds((L;M),t).
+ :- contradict(F), complement(F,L,M), holds((L),t), holds((M),t).
 
 caused(L,t) :- occurs(A,t), effect(A,L,N), 
                not holds(F',t-1) : condition(A,M',N), complement(F',L',M');
                    holds(F',t-1) : condition(A,L',N), complement(F',L',M').
 holds(F,t) :- caused(L,t), complement(F,L,M).
 holds(F,t) :- holds(F,t-1), complement(F,L,M), not caused(M,t).
- :- caused((L;M),t), contradict(F), complement(F,L,M).
+ :- caused((L),t), caused((M),t), contradict(F), complement(F,L,M).
 
 #program state(t).
 #external vol(t).
@@ -95,7 +101,7 @@ holds(F,t) :- holds(F,t-1), complement(F,L,M), not caused(M,t).
 
 %%%%%%% base
 
-alt_holds(L,0,t); alt_holds(M,0,t) :- complement(F,L,M), not initially(L;M), vol(t).
+alt_holds(L,0,t); alt_holds(M,0,t) :- complement(F,L,M), not initially(L), not initially(M), vol(t).
 alt_holds(L,0,t) :- initially(L), vol(t).
 
 pos_holds_oneof(N,B,t) :- vol(t), initially_oneof(N,_,B),                  alt_holds(L,0,t) : initially_oneof(N,L,B).
@@ -128,7 +134,7 @@ bottom(t) :- pos_goal_or(N,t)  : goal_or(N,_,_);
 
 %%%%%%% saturation
 
-alt_holds((L;M),0,t) :- bottom(t), complement(F,L,M), not initially(L;M), vol(t).
+alt_holds((L;M),0,t) :- bottom(t), complement(F,L,M), not initially(L), not initially(M), vol(t).
 
 :- not bottom(t), vol(t).
 

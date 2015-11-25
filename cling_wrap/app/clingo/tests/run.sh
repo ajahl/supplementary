@@ -39,6 +39,9 @@ function normalize() {
         elif [[ "$line" =~ "^UNKNOWN" ]]; then
             result="UNKNOWN"
             next=1
+        elif [[ "$line" =~ "^OPTIMUM FOUND" ]]; then
+            result="OPTIMUM FOUND"
+            next=1
         fi
     done
     print "$result"
@@ -84,7 +87,13 @@ if [[ $# > 0 && "$1" != "--" ]] then
 fi
 [[ $# > 0 && "$1" == "--" ]] && shift
 if [[ $norm == 1 ]]; then
-    $clingo 0 "$file" "$@" | normalize
+    name=${file%.lp}
+    opts=( )
+    if [[ -e "$name.cmd" ]]; then
+        opts=$(cat "$name.cmd")
+        opts=(${(s: :)opts})
+    fi
+    $clingo 0 "${opts[@]}" "$file" "$@" | normalize
     exit 0
 else
     run=0
@@ -93,7 +102,12 @@ else
     for x in $wd/**/*.lp; do
         run=$[run+1]
         name=${x%.lp}
-        if $clingo 0 $x -Wno-term-undefined -Wno-atom-undefined "$@" | normalize | diff - "$name.sol"; then
+        opts=( )
+        if [[ -e "$name.cmd" ]]; then
+            opts=$(cat "$name.cmd")
+            opts=(${(s: :)opts})
+        fi
+        if $clingo 0 $x -Wno-operation-undefined -Wno-atom-undefined "${opts[@]}" "$@" | normalize | diff - "$name.sol"; then
             print -n "."
         else
             print -n "F"

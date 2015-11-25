@@ -4,7 +4,7 @@
 
 function main(prg)
     for i=10,-2,-3 do
-        prg:ground("p", {i})
+        prg:ground({{"p", {i}}})
         prg:solve()
     end
 end

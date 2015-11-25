@@ -2,13 +2,17 @@
 
 function main(prg)
     step = 1
-    prg:ground("base", {})
+    parts = {}
     while true do
+        parts = {}
         if step > 1 then
-            prg:releaseExternal(gringo.Fun("volatile", {step-1}))
+            prg:release_external(gringo.Fun("volatile", {step-1}))
+        else
+            parts[#parts+1] = {"base", {}}
         end
-        prg:ground("cumulative", {step})
-        prg:assignExternal(gringo.Fun("volatile", {step}), true)
+        parts[#parts+1] = {"cumulative", {step}}
+        prg:ground(parts)
+        prg:assign_external(gringo.Fun("volatile", {step}), true)
         ret = prg:solve()
         if ret == gringo.SolveResult.SAT then
             break
@@ -34,17 +38,17 @@ direction(south).
 direction(west).
 
 % blockages
-blocked(I,J,D) :- barrier(I,J,D),direction(D),dim(I;J).
+blocked(I,J,D) :- barrier(I,J,D),direction(D),dim(I),dim(J).
 
 blocked(1..dimension,1           ,north).
 blocked(   dimension,1..dimension,east ).
 blocked(1..dimension,   dimension,south).
 blocked(           1,1..dimension,west ).
 
-blocked(I+1,J,west ) :- blocked(I,J,east ),dim(I;J),I<dimension.
-blocked(I,J+1,north) :- blocked(I,J,south),dim(I;J),J<dimension.
-blocked(I-1,J,east ) :- blocked(I,J,west ),dim(I;J),I>1.
-blocked(I,J-1,south) :- blocked(I,J,north),dim(I;J),J>1.
+blocked(I+1,J,west ) :- blocked(I,J,east ), dim(I), dim(J), I<dimension.
+blocked(I,J+1,north) :- blocked(I,J,south), dim(I), dim(J), J<dimension.
+blocked(I-1,J,east ) :- blocked(I,J,west ), dim(I), dim(J), I>1.
+blocked(I,J-1,south) :- blocked(I,J,north), dim(I), dim(J), J>1.
 
 % this should simplify sth.
 dir(west, -1,  0).
@@ -55,8 +59,8 @@ dir(south, 0,  1).
 #program cumulative(t).
 
 % which places are reachable by a robot
-reachable(R, I + DI, J + DJ, D, t) :- not blocked2(I, J, t), dir(D, DI, DJ), go(R, D, t), position(R, I, J, t - 1), dim(I;J).
-reachable(R, I + DI, J + DJ, D, t) :- not blocked2(I, J, t), reachable(R, I, J, D, t), dir(D, DI, DJ), go(R, D, t), dim(I;J).
+reachable(R, I + DI, J + DJ, D, t) :- not blocked2(I, J, t), dir(D, DI, DJ), go(R, D, t), position(R, I, J, t - 1), dim(I), dim(J).
+reachable(R, I + DI, J + DJ, D, t) :- not blocked2(I, J, t), reachable(R, I, J, D, t), dir(D, DI, DJ), go(R, D, t), dim(I), dim(J).
 
 % no crossing of blockages or robots
 blocked2(I, J, t) :- blocked(I, J, D), go(R, D, t).
@@ -70,7 +74,7 @@ moved(t) :- reachable(R, I, J, D, t).
  :- not moved(t).
 
 % inertia
-position(R, I, J, t) :- position(R, I, J, t - 1), not selectRobot(R, t), robot(R), dim(I;J).
+position(R, I, J, t) :- position(R, I, J, t - 1), not selectRobot(R, t), robot(R), dim(I),dim(J).
 
 % plan generator
 1 { selectRobot(R, t) : robot(R) } 1.

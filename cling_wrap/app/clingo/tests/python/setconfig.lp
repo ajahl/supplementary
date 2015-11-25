@@ -3,13 +3,13 @@
 import gringo
 
 def main(prg):
-    prg.ground("step1", [])
-    prg.assignExternal(gringo.Fun("f"), True)
-    prg.setConf("-n 1")
+    prg.ground([("step1", [])])
+    prg.assign_external(gringo.Fun("f"), True)
+    prg.conf.solve.models = 1
     prg.solve()
-    prg.ground("step2", [])
-    prg.assignExternal(gringo.Fun("f"), False)
-    prg.setConf("-n 0")
+    prg.ground([("step2", [])])
+    prg.assign_external(gringo.Fun("f"), False)
+    prg.conf.solve.models = 0
     prg.solve()
 
 #end.

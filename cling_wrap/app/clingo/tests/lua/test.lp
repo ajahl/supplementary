@@ -19,7 +19,7 @@ function convert(ret)
     end
 end
 
-function onModel(x)
+function on_model(x)
     print("Answer: 42")
     print(
            "hasA(" ..        tostring(x:contains(gringo.Fun("a"))) .. ") "
@@ -27,21 +27,26 @@ function onModel(x)
         .. "model(" ..       table.concat(sorted(map(tostring, x:atoms())), ",") .. ") ")
 end
 
-function onFinish(ret, int) 
+function on_finish(ret, int) 
     print("Answer: 42")
     print(convert(ret) .. "_" .. tostring(int))
 end
 
 function main (prg)
-    n = prg:getConst("n")
+    n = prg:get_const("n")
     Fun = gringo.Fun
-    prg:ground("base", {})
+    parts = {}
+    parts[#parts+1] = {"base", {}}
+    prg:ground(parts)
     prg:solve()
+    parts = {}
     prg:add("test", {"x"}, "test(x).")
-    prg:ground("test", {Fun("f", {1,2})})
+    parts[#parts+1] = {"test", {Fun("f", {1,2})}}
     for i=1,n do
-        prg:ground("cumulative", {i})
-        f = prg:asolve(onModel, onFinish)
+        parts[#parts+1] = {"cumulative", {i}}
+        prg:ground(parts)
+        parts = {}
+        f = prg:solve_async(nil, on_model, on_finish)
         f:wait(0)
         ret = f:get()
         print("Answer: 42")

@@ -3,14 +3,14 @@
 import gringo
 
 def main(prg):
-    prg.ground("pigeon", [])
+    prg.ground([("pigeon", [])])
     for i in range(0,2):
-        prg.assignExternal(gringo.Fun("p"), True)
+        prg.assign_external(gringo.Fun("p"), True)
         prg.solve()
-        prg.assignExternal(gringo.Fun("p"), False)
-        f = prg.asolve()
+        prg.assign_external(gringo.Fun("p"), False)
+        f = prg.solve_async()
         f.wait(0.01)
-        f.interrupt()
+        f.cancel()
 
 #end.
 
