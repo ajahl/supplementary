@@ -104,7 +104,7 @@ namespace alica
 			vector<double> _rpropStepWidth;
 			vector<double> _rpropStepConvergenceThreshold;
 			double _utilityThreshold;
-			ulong _maxSolveTime;
+			unsigned long _maxSolveTime;
 			// //vector<double>[] seeds;
 			shared_ptr<ICompiledTerm> _term;
 

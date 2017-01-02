@@ -319,6 +319,8 @@ RESTORE (restore_rt, __NR_rt_sigreturn)
 void restore_rt (void) asm ("__restore_rt")
   __attribute__ ((visibility ("hidden")));
 
+#define _NSIG 22
+
 #define INIT_SEGV						\
 do								\
   {								\
@@ -327,7 +329,7 @@ do								\
     sigemptyset (&act.k_sa_mask);				\
     act.k_sa_flags = SA_SIGINFO|0x4000000;			\
     act.k_sa_restorer = restore_rt;				\
-    syscall (SYS_rt_sigaction, SIGSEGV, &act, NULL, _NSIG / 8);	\
+    syscall (SYS_sigaction, SIGSEGV, &act, NULL, _NSIG / 8);	\
   }								\
 while (0)
 
@@ -395,7 +397,7 @@ SIGNAL_HANDLER(catch_fpe)
 {
     unblock_signal(SIGFPE);
 #ifdef HANDLE_DIVIDE_OVERFLOW
-    HANDLE_DIVIDE_OVERFLOW;
+//    HANDLE_DIVIDE_OVERFLOW;
 #else
     MAKE_THROW_FRAME(arithexception);
 #endif

@@ -68,13 +68,13 @@ namespace supplementary
 			if (!this->started) // for destroying the NotifyTimer
 				return;
 
-			chrono::system_clock::time_point start = std::chrono::high_resolution_clock::now();
+			chrono::system_clock::time_point start = std::chrono::system_clock::now();
 			if (this->running)
 			{
 				(obj->*callback)();
 			}
 			//			XXX: call function here
-			auto dura = std::chrono::high_resolution_clock::now() - start;
+			auto dura = std::chrono::system_clock::now() - start;
 //			cout << "NotifyTimerEvent: Duration is " << chrono::duration_cast<chrono::nanoseconds>(dura).count()
 //					<< " nanoseconds" << endl;
 			this_thread::sleep_for(msInterval - dura);

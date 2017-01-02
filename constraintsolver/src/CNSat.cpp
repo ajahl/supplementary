@@ -18,7 +18,7 @@
 #include "Decider.h"
 
 #include <engine/IAlicaClock.h>
-#include <clock/AlicaROSClock.h>
+#include "clock/AlicaSystemClock.h"
 
 #include <algorithm>
 
@@ -90,7 +90,7 @@ namespace alica
 				this->decisions = make_shared<vector<shared_ptr<Var> >>();
 				this->decisionLevel = make_shared<vector<shared_ptr<DecisionLevel> >>();
 
-				alicaClock = new alicaRosProxy::AlicaROSClock();
+				alicaClock = new alica_dummy_proxy::AlicaSystemClock();
 			}
 
 			CNSat::~CNSat()

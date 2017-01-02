@@ -48,7 +48,7 @@ namespace alica
 
 			supplementary::SystemConfig* sc = supplementary::SystemConfig::getInstance();
 			maxfevals = (*sc)["Alica"]->get<int>("Alica", "CSPSolving", "MaxFunctionEvaluations", NULL);
-			maxSolveTime = ((ulong)(*sc)["Alica"]->get<int>("Alica", "CSPSolving", "MaxSolveTime", NULL)) * 1E6;
+			maxSolveTime = ((unsigned long)(*sc)["Alica"]->get<int>("Alica", "CSPSolving", "MaxSolveTime", NULL)) * 1E6;
 			rPropConvergenceStepSize = 0;
 			useIntervalProp = true;
 			optimize = false;

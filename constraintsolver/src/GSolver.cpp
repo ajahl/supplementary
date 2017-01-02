@@ -14,8 +14,8 @@
 #include "Configuration.h"
 
 #include <engine/IAlicaClock.h>
+#include "clock/AlicaSystemClock.h"
 #include <engine/AlicaEngine.h>
-#include <clock/AlicaROSClock.h>
 
 #include <limits>
 #include <string>
@@ -42,10 +42,10 @@ namespace alica
 			_seedWithUtilOptimum = true;
 			supplementary::SystemConfig* sc = supplementary::SystemConfig::getInstance();
 			_maxfevals = (*sc)["Alica"]->get<int>("Alica", "CSPSolving", "MaxFunctionEvaluations", NULL);
-			_maxSolveTime = ((ulong)(*sc)["Alica"]->get<int>("Alica", "CSPSolving", "MaxSolveTime", NULL)) * 1E6; //* 1000000;
+			_maxSolveTime = ((unsigned long)(*sc)["Alica"]->get<int>("Alica", "CSPSolving", "MaxSolveTime", NULL)) * 1E6; //* 1000000;
 			_rPropConvergenceStepSize = 1E-2;
 
-			alicaClock = new alicaRosProxy::AlicaROSClock();
+			alicaClock = new alica_dummy_proxy::AlicaSystemClock();
 		}
 
 		GSolver::~GSolver()

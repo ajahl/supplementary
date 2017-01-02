@@ -85,7 +85,7 @@ namespace alica
 			shared_ptr<vector<shared_ptr<vector<double>> > > limits;
 
 			double utilityThreshold;
-			ulong maxSolveTime;
+			unsigned long maxSolveTime;
 			unsigned long long begin;
 
 			ofstream sw;
