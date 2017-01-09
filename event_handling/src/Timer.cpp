@@ -46,9 +46,9 @@ namespace supplementary
 			if (!this->started) // for destroying the timer
 				return;
 
-			chrono::system_clock::time_point start = std::chrono::system_clock::now();
+			chrono::high_resolution_clock::time_point start = std::chrono::high_resolution_clock::now();
 			this->notifyAll(notifyAll);
-			auto dura = std::chrono::system_clock::now() - start;
+			auto dura = std::chrono::high_resolution_clock::now() - start;
 //			cout << "TimerEvent: Duration is " << chrono::duration_cast<chrono::nanoseconds>(dura).count()
 //					<< " nanoseconds" << endl;
 			this_thread::sleep_for(msInterval - dura);
